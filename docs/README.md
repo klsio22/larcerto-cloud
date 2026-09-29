@@ -10,6 +10,7 @@ Referência dos scripts shell do lab OpenStack AIO. O guia operacional (como sub
 | [`../run-kolla.sh`](../run-kolla.sh) | Wrapper do `kolla-ansible` (inventário + `kolla-config`) | [`run-kolla.sh.md`](run-kolla.sh.md) |
 | [`../kolla-config/*-openrc*.sh`](../kolla-config/) | Credenciais CLI OpenStack (`source`) | [`kolla-config-scripts.md`](kolla-config-scripts.md) |
 | [`../kolla-config/clouds.yaml`](../kolla-config/clouds.yaml) | Clouds para `OS_CLOUD=…` | [`kolla-config-scripts.md`](kolla-config-scripts.md) |
+| Tema Horizon Lux | Cores/layout custom (herda default) | [`horizon-theme-lux.md`](horizon-theme-lux.md) |
 
 ## Fluxo
 

@@ -647,6 +647,10 @@ enable_neutron_provider_networks: false
 # Horizon - Dashboard Options
 #############################
 #horizon_backend_database: false
+# Tema custom (cores/layout estilo Lux). Ficheiros em config/horizon/themes/lux/
+horizon_custom_themes:
+  - name: lux
+    label: Lux
 
 #############################
 # Ironic options
