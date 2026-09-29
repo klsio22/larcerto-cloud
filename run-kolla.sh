@@ -12,9 +12,28 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ORIGINAL_USER="${SUDO_USER:-$USER}"
+ORIGINAL_USER="${SUDO_USER:-${USER:-$(id -un)}}"
 ORIGINAL_HOME="$(getent passwd "${ORIGINAL_USER}" | cut -d: -f6)"
 ORIGINAL_HOME="${ORIGINAL_HOME:-$HOME}"
+
+# Root sem senha: NOPASSWD, senao Docker+nsenter (grupo docker), senao sudo interativo.
+run_as_root() {
+  if [[ "${EUID}" -eq 0 ]]; then
+    "$@"
+    return 0
+  fi
+  if sudo -n true 2>/dev/null; then
+    sudo "$@"
+    return $?
+  fi
+  if docker info >/dev/null 2>&1; then
+    docker run --rm --privileged --pid=host alpine:3.20 \
+      nsenter -t 1 -m -u -i -n -- "$@"
+    return $?
+  fi
+  echo "Precisa de root: sudo NOPASSWD, grupo docker, ou digite a senha." >&2
+  sudo "$@"
+}
 
 VENV_PATH="${VENV_PATH:-$HOME/venvs/kolla}"
 KOLLA_BIN="${KOLLA_BIN:-${VENV_PATH}/bin/kolla-ansible}"
@@ -66,11 +85,7 @@ run_step() {
 
   if [[ "${AUTO_STOP_HOST_LIBVIRT}" == "true" ]]; then
     if [[ "${libvirt_sock_exists_before}" -eq 0 || "${libvirtd_active_before}" == "active" || "${libvirtd_socket_active_before}" == "active" ]]; then
-      if [[ "${EUID}" -eq 0 ]]; then
-        systemctl stop libvirtd.socket libvirtd virtlogd.socket virtlogd >/dev/null 2>&1 || true
-      else
-        sudo systemctl stop libvirtd.socket libvirtd virtlogd.socket virtlogd >/dev/null 2>&1 || true
-      fi
+      run_as_root systemctl stop libvirtd.socket libvirtd virtlogd.socket virtlogd >/dev/null 2>&1 || true
     fi
   fi
 
@@ -173,16 +188,15 @@ PY
     cmd+=(-e "@${facts_file}")
   fi
 
-  if [[ "${EUID}" -eq 0 ]]; then
+  # Kolla precisa de root (become). Sem sudo NOPASSWD, usa Docker+nsenter.
+  run_as_root env \
+    "PATH=${VENV_PATH}/bin:${PATH}" \
+    "HOME=${ORIGINAL_HOME}" \
+    "USER=root" \
+    "LOGNAME=root" \
+    "SUDO_USER=${ORIGINAL_USER}" \
+    "ANSIBLE_COLLECTIONS_PATH=${ORIGINAL_HOME}/.ansible/collections:/usr/share/ansible/collections" \
     "${cmd[@]}"
-  else
-    # Preserva PATH/HOME/collections para o Ansible encontrar openstack.kolla.
-    sudo env \
-      "PATH=${VENV_PATH}/bin:${PATH}" \
-      "HOME=${ORIGINAL_HOME}" \
-      "ANSIBLE_COLLECTIONS_PATH=${ORIGINAL_HOME}/.ansible/collections:/usr/share/ansible/collections" \
-      "${cmd[@]}"
-  fi
 
   if [[ -n "${facts_file}" && -f "${facts_file}" ]]; then
     rm -f "${facts_file}"

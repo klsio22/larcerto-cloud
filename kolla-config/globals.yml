@@ -134,8 +134,9 @@ kolla_internal_vip_address: "192.168.1.250"
 # Yet another way to workaround the naming problem is to create a bond for the
 # interface on all hosts and give the bond name here. Similar strategy can be
 # followed for other types of interfaces.
-# Usa a interface padrao do host (evita fixar em uma NIC fisica especifica).
-network_interface: "{{ ansible_facts.default_ipv4.interface }}"
+# Host Ethernet NIC (LAN). APIs/VIP bind here; the host IP stays in place.
+# Do not use this NIC as neutron_external_interface (that would drop network).
+network_interface: "enp9s0"
 
 # These can be adjusted for even more customization. The default is the same as
 # the 'network_interface'. These interfaces must contain an IP address.
@@ -160,8 +161,7 @@ network_interface: "{{ ansible_facts.default_ipv4.interface }}"
 # though an IP address can exist on this interface, it will be unusable in most
 # configurations. It is recommended this interface not be configured with any IP
 # addresses for that reason.
-# Em lab AIO, use uma interface dummy dedicada para evitar impacto
-# na rede fisica do host.
+# AIO lab: dedicated dummy interface to avoid impacting the host NIC.
 neutron_external_interface: "dummy0"
 
 # Valid options are [ openvswitch, ovn ]
