@@ -6,7 +6,7 @@ Referência dos scripts shell do lab OpenStack AIO. O guia operacional (como sub
 
 | Script / ficheiro | Papel | Doc |
 |-------------------|-------|-----|
-| [`../lab.sh`](../lab.sh) | Entrypoint único: prep, deploy, fixes, status, stop | [`lab.sh.md`](lab.sh.md) |
+| [`../lab.sh`](../lab.sh) | Entrypoint único: prep, deploy, fixes, status, stop, start | [`lab.sh.md`](lab.sh.md) |
 | [`../run-kolla.sh`](../run-kolla.sh) | Wrapper do `kolla-ansible` (inventário + `kolla-config`) | [`run-kolla.sh.md`](run-kolla.sh.md) |
 | [`../kolla-config/*-openrc*.sh`](../kolla-config/) | Credenciais CLI OpenStack (`source`) | [`kolla-config-scripts.md`](kolla-config-scripts.md) |
 | [`../kolla-config/clouds.yaml`](../kolla-config/clouds.yaml) | Clouds para `OS_CLOUD=…` | [`kolla-config-scripts.md`](kolla-config-scripts.md) |
@@ -17,7 +17,7 @@ Referência dos scripts shell do lab OpenStack AIO. O guia operacional (como sub
 ```mermaid
 flowchart LR
   labSh["lab.sh"] --> helpers["helpers internos"]
-  labSh --> cmds["comandos prep/fix/status/stop"]
+  labSh --> cmds["comandos prep/fix/status/stop/start"]
   labSh --> kollaFwd["deploy/bootstrap/..."]
   kollaFwd --> runKolla["run-kolla.sh"]
   runKolla --> kollaCfg["kolla-config/"]

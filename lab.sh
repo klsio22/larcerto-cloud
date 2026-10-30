@@ -46,6 +46,15 @@ docker_cmd() {
   "${DOCKER[@]}" "$@"
 }
 
+# Unidades systemd kolla-* (list-unit-files sobrevive a reboot / disable).
+list_kolla_unit_files() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 0
+  fi
+  systemctl list-unit-files --type=service --no-legend 'kolla-*' 2>/dev/null \
+    | awk '$1 ~ /^kolla-.*\.service$/ { print $1 }'
+}
+
 # Lê "key: value" ativo (não comentado) de globals.yml.
 read_globals_iface() {
   local key="$1"
@@ -126,7 +135,8 @@ Comandos:
   test-ovs       Teste rápido (segundos) do openvswitch_db / vswitchd
   fix-horizon    Remove container horizon em conflito 409 (depois: lab.sh deploy)
   status         Estado rápido: dummy0, OVS, br-ex, Horizon, VIP
-  stop           Para containers Docker [--remove] [--disable-kolla-services]
+  stop           Para o lab e impede autostart no boot [--remove]
+  start          Sobe o lab já deployado (dummy0 + kolla-* + fix-wired)
   deploy | bootstrap | prechecks | post-deploy | all | stop-kolla
                  Encaminha para ./project/run-kolla.sh
                  (deploy / all / post-deploy: depois corre fix-wired automaticamente)
@@ -139,6 +149,8 @@ Exemplos:
   ./project/lab.sh test-ovs
   ./project/lab.sh fix-wired
   ./project/lab.sh status
+  ./project/lab.sh stop
+  ./project/lab.sh start
 EOF
 }
 
@@ -357,13 +369,13 @@ cmd_status() {
 
 cmd_stop() {
   local REMOVE_AFTER_STOP=false
-  local DISABLE_KOLLA_SERVICES=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --remove) REMOVE_AFTER_STOP=true; shift ;;
-      --disable-kolla-services) DISABLE_KOLLA_SERVICES=true; shift ;;
+      --disable-kolla-services) shift ;; # já é o padrão (compat)
       -h|--help)
-        echo "Uso: lab.sh stop [--remove] [--disable-kolla-services]"
+        echo "Uso: lab.sh stop [--remove]"
+        echo "Para kolla-*, desabilita autostart no boot e para os containers."
         exit 0
         ;;
       *)
@@ -373,18 +385,15 @@ cmd_stop() {
     esac
   done
 
-  if command -v systemctl >/dev/null 2>&1; then
-    mapfile -t kolla_services < <(systemctl list-units --type=service --all 'kolla-*' --no-legend 2>/dev/null | awk '{print $1}')
-  else
-    kolla_services=()
-  fi
+  local kolla_services=()
+  mapfile -t kolla_services < <(list_kolla_unit_files)
 
   if [[ "${#kolla_services[@]}" -gt 0 ]]; then
-    echo "Parando servicos kolla-* ..."
+    echo "Parando e desabilitando servicos kolla-* (nao voltam no boot)..."
     run_as_root systemctl stop "${kolla_services[@]}" 2>/dev/null || true
-    if [[ "${DISABLE_KOLLA_SERVICES}" == "true" ]]; then
-      run_as_root systemctl disable "${kolla_services[@]}" 2>/dev/null || true
-    fi
+    run_as_root systemctl disable "${kolla_services[@]}" 2>/dev/null || true
+  else
+    echo "Nenhuma unidade kolla-* encontrada."
   fi
 
   init_docker
@@ -408,7 +417,45 @@ cmd_stop() {
       "${DOCKER[@]}" ps -aq | xargs -r "${DOCKER[@]}" rm
       echo "Containers removidos."
     fi
+  else
+    local remain_ids
+    remain_ids="$("${DOCKER[@]}" ps -aq)"
+    if [[ -n "${remain_ids}" ]]; then
+      echo "Desativando restart automatico dos containers..."
+      "${DOCKER[@]}" ps -aq | xargs -r "${DOCKER[@]}" update --restart=no
+    fi
   fi
+}
+
+cmd_start() {
+  init_docker
+  local kolla_ids
+  kolla_ids="$("${DOCKER[@]}" ps -aq --filter label=kolla_version 2>/dev/null || true)"
+  if [[ -z "${kolla_ids}" ]]; then
+    echo "Nenhum container Kolla encontrado (lab.sh stop --remove ou ainda sem deploy)." >&2
+    echo "Corre: ./project/lab.sh deploy" >&2
+    exit 1
+  fi
+
+  echo "==> dummy0 (some no reboot; Neutron precisa dela)"
+  cmd_dummy0
+
+  local kolla_services=()
+  mapfile -t kolla_services < <(list_kolla_unit_files)
+  if [[ "${#kolla_services[@]}" -gt 0 ]]; then
+    echo "==> Habilitar e iniciar servicos kolla-*"
+    run_as_root systemctl enable --now "${kolla_services[@]}" 2>/dev/null || true
+  else
+    echo "==> Nenhuma unidade kolla-* — a subir containers via Docker"
+  fi
+
+  echo "==> Garantir containers Kolla Up"
+  "${DOCKER[@]}" ps -aq --filter label=kolla_version | xargs -r "${DOCKER[@]}" start >/dev/null
+  echo "Containers Kolla iniciados."
+
+  echo
+  echo "==> Padrao do lab: cabo (network_interface) fora do br-ex"
+  cmd_fix_wired
 }
 
 cmd_kolla() {
@@ -444,6 +491,7 @@ case "${ACTION}" in
   fix-horizon) cmd_fix_horizon ;;
   status) cmd_status ;;
   stop) cmd_stop "$@" ;;
+  start) cmd_start ;;
   deploy|bootstrap|prechecks|post-deploy|all) cmd_kolla "${ACTION}" "$@" ;;
   stop-kolla) cmd_kolla stop "$@" ;;
   *)

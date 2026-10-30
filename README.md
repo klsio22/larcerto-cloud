@@ -40,7 +40,7 @@ project/
 |----------|----------------|
 | [`README.md`](README.md) | Guia do lab: como subir a nuvem, rede AIO, troubleshooting |
 | [`docs/`](docs/README.md) | Documentação dos scripts: funções de `lab.sh`, `run-kolla.sh`, openrc/`clouds.yaml` |
-| [`lab.sh`](lab.sh) | Entrypoint único: `prep`, `bootstrap`/`deploy`/`post-deploy`, `status`, `stop`, `fix-ovs`, `fix-wired`, `fix-horizon`, `test-ovs` |
+| [`lab.sh`](lab.sh) | Entrypoint único: `prep`, `bootstrap`/`deploy`/`post-deploy`, `status`, `stop`, `start`, `fix-ovs`, `fix-wired`, `fix-horizon`, `test-ovs` |
 | [`run-kolla.sh`](run-kolla.sh) | Wrapper do `kolla-ansible` (inventário + `kolla-config`); chamado pelo `lab.sh`. Tenta root via Docker se não houver sudo NOPASSWD |
 | [`all-in-one`](all-in-one) | Inventário Ansible AIO: todos os papéis (control, network, compute…) em `localhost` |
 | [`enunciado-trabalho-1.md`](enunciado-trabalho-1.md) | Requisitos do Trabalho 1 (REQ01–REQ24 + substitutivo REQ25) |
@@ -119,11 +119,16 @@ Atalho (bootstrap + prechecks + deploy + fix-wired no fim):
 3. OVS só: `./project/lab.sh test-ovs`
 4. Portas: [`ports.md`](ports.md)
 
-### 4) Parar
+### 4) Parar e voltar a subir
+
+`stop` desabilita as unidades systemd `kolla-*` e o restart automático do Docker: os containers **não voltam no boot**. Reboot **sem** `stop` continua a subir o lab (padrão Kolla).
 
 ```bash
 ./project/lab.sh stop
-# ou: ./project/lab.sh stop --remove
+# ou: ./project/lab.sh stop --remove   # apaga containers; depois precisa de deploy
+
+# Depois do reboot (ou para voltar a trabalhar, sem redeploy):
+./project/lab.sh start
 ```
 
 ## Troubleshooting (via lab.sh)

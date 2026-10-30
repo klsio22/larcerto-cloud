@@ -1,6 +1,6 @@
 # `lab.sh`
 
-Entrypoint único do lab AIO (dummy0, OVS host, testes, stop, fixes e deploy Kolla).
+Entrypoint único do lab AIO (dummy0, OVS host, testes, stop/start, fixes e deploy Kolla).
 
 ```bash
 ./project/lab.sh <comando> [opções]
@@ -32,6 +32,10 @@ Executa um comando como root, nesta ordem:
 
 - `init_docker` — define `DOCKER=(docker)` ou `DOCKER=(sudo docker)`; falha se nenhum tiver acesso.
 - `docker_cmd` — chama `init_docker` e executa `"${DOCKER[@]}" "$@"`.
+
+### `list_kolla_unit_files`
+
+Lista unidades systemd `kolla-*.service` via `systemctl list-unit-files` (visível mesmo depois de disable/reboot). Usado por `stop` e `start`.
 
 ### `read_globals_iface` / `network_iface` / `external_iface`
 
@@ -70,7 +74,8 @@ Encaminha a ação para [`run-kolla.sh`](run-kolla.sh.md). Se a ação for `depl
 | `test-ovs` | `cmd_test_ovs` | Healthcheck rápido OVS (host, containers, `ovs-vsctl`, alerta cabo em `br-ex`) |
 | `fix-horizon` | `cmd_fix_horizon` | Remove container `horizon` (resolve 409 Conflict no recreate) |
 | `status` | `cmd_status` | Estado: interfaces, OVS, Horizon, HTTP no VIP |
-| `stop` | `cmd_stop` | Para serviços `kolla-*` e containers Docker |
+| `stop` | `cmd_stop` | Para `kolla-*`, desabilita autostart no boot e para containers |
+| `start` | `cmd_start` | Sobe o lab já deployado: `dummy0` + `kolla-*` + `fix-wired` |
 | `bootstrap` | `cmd_kolla` | → `run-kolla.sh bootstrap` |
 | `prechecks` | `cmd_kolla` | → `run-kolla.sh prechecks` |
 | `deploy` | `cmd_kolla` | → `run-kolla.sh deploy` + `fix-wired` |
@@ -108,7 +113,7 @@ Usar antes do 1.º deploy ou após conflito com OVS do host.
 3. Ativa a ligação NetworkManager (`nmcli connection up` ou `nmcli device connect`)
 4. Falha se a NIC ficar sem IPv4
 
-Também corre automaticamente no fim de `deploy` / `all` / `post-deploy`.
+Também corre automaticamente no fim de `deploy` / `all` / `post-deploy` / `start`.
 
 #### `cmd_test_ovs` (`test-ovs`)
 
@@ -139,14 +144,26 @@ Imprime:
 
 #### `cmd_stop` (`stop`)
 
-Opções:
+Para o lab de forma que **não volte no boot**. Opções:
 
 | Opção | Efeito |
 |-------|--------|
-| `--remove` | Após parar, remove todos os containers (`docker rm`) |
-| `--disable-kolla-services` | Além de parar, desabilita unidades `kolla-*` |
+| `--remove` | Após parar, remove todos os containers (`docker rm`); o próximo passo é `deploy` |
+| `--disable-kolla-services` | Aceite por compatibilidade; já é o comportamento padrão |
 
-Fluxo: para `kolla-*` via systemctl → para containers em execução → opcionalmente remove.
+Fluxo: `systemctl stop` + `disable` das unidades `kolla-*` → `docker stop` → `docker update --restart=no` (salvo `--remove`).
+
+Reboot **sem** `stop` continua a subir o lab (unidades Kolla ainda enabled).
+
+#### `cmd_start` (`start`)
+
+Sobe um lab **já deployado**, sem `kolla-ansible deploy`:
+
+1. Falha se não houver containers com label `kolla_version` (ex.: após `stop --remove`)
+2. Recria/ativa `dummy0` (some no reboot)
+3. `systemctl enable --now` nas unidades `kolla-*`
+4. `docker start` nos containers Kolla ainda parados
+5. `cmd_fix_wired` (cabo fora do `br-ex`)
 
 ---
 
@@ -160,5 +177,6 @@ chmod +x project/lab.sh
 ./project/lab.sh test-ovs
 ./project/lab.sh fix-wired
 ./project/lab.sh status
-./project/lab.sh stop --remove
+./project/lab.sh stop
+./project/lab.sh start
 ```

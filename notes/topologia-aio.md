@@ -52,7 +52,7 @@ Transcrições: [`../../transcricoes/`](../../transcricoes/).
 6. Abrir Horizon: `http://192.168.1.250`
 7. Instalar CLI (se ainda não tiver): `pip install python-openstackclient` no venv.
 
-Estado / parar: `./project/lab.sh status` · `./project/lab.sh stop`
+Estado / parar / subir: `./project/lab.sh status` · `./project/lab.sh stop` · `./project/lab.sh start`
 
 ## Pós-nuvem (ainda pendente no Trabalho 1)
 
