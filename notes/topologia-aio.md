@@ -15,7 +15,7 @@ Host (Zorin)
           └─ VM DB   (MariaDB)             ← REQ15
 ```
 
-Portas: ver [`../ports.md`](../ports.md).
+Portas: ver [`../docs/ports.md`](../docs/ports.md).
 
 ## Por que enp9s0 + dummy0
 

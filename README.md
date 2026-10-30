@@ -5,9 +5,9 @@ Labs e entrega do **Trabalho 1** (nuvem privada + app web CRUD).
 ## Fontes
 
 1. **Videoaulas 06–10** — [`transcricoes/`](../transcricoes/) · links em [`videos/README.md`](../videos/README.md)
-2. **Enunciado** — [`enunciado-trabalho-1.md`](enunciado-trabalho-1.md) (REQ01–REQ24; substitutivo + REQ25)
-3. **OpenStack com containers** — [`kolla-ansible-quickstart.md`](kolla-ansible-quickstart.md)
-4. **Portas dos containers** — [`ports.md`](ports.md)
+2. **Enunciado** — [`docs/enunciado-trabalho-1.md`](docs/enunciado-trabalho-1.md) (REQ01–REQ24; substitutivo + REQ25)
+3. **OpenStack com containers** — [`docs/kolla-ansible-quickstart.md`](docs/kolla-ansible-quickstart.md)
+4. **Portas dos containers** — [`docs/ports.md`](docs/ports.md)
 5. **Topologia AIO** — [`notes/topologia-aio.md`](notes/topologia-aio.md)
 
 Não inventar passos além das aulas e do enunciado. Se faltar transcrição, avisar.
@@ -19,11 +19,12 @@ project/
   README.md
   lab.sh
   run-kolla.sh
-  all-in-one
-  enunciado-trabalho-1.md
-  kolla-ansible-quickstart.md
-  ports.md
-  docs/                      # referência detalhada dos scripts
+  all-in-one                 # inventário Ansible (usado pelo run-kolla.sh)
+  docs/                      # toda a documentação de apoio
+    enunciado-trabalho-1.md
+    kolla-ansible-quickstart.md
+    ports.md
+    lab.sh.md · run-kolla.sh.md · kolla-config-scripts.md · horizon-theme-lux.md
   notes/
     topologia-aio.md
   kolla-config/
@@ -43,9 +44,9 @@ project/
 | [`lab.sh`](lab.sh) | Entrypoint único: `prep`, `bootstrap`/`deploy`/`post-deploy`, `status`, `stop`, `start`, `fix-ovs`, `fix-wired`, `fix-horizon`, `test-ovs` |
 | [`run-kolla.sh`](run-kolla.sh) | Wrapper do `kolla-ansible` (inventário + `kolla-config`); chamado pelo `lab.sh`. Tenta root via Docker se não houver sudo NOPASSWD |
 | [`all-in-one`](all-in-one) | Inventário Ansible AIO: todos os papéis (control, network, compute…) em `localhost` |
-| [`enunciado-trabalho-1.md`](enunciado-trabalho-1.md) | Requisitos do Trabalho 1 (REQ01–REQ24 + substitutivo REQ25) |
-| [`kolla-ansible-quickstart.md`](kolla-ansible-quickstart.md) | Notas/referência do quickstart Kolla (contexto OpenStack em containers) |
-| [`ports.md`](ports.md) | Mapa de portas VIP, containers Kolla e da app do trabalho |
+| [`docs/enunciado-trabalho-1.md`](docs/enunciado-trabalho-1.md) | Requisitos do Trabalho 1 (REQ01–REQ24 + substitutivo REQ25) |
+| [`docs/kolla-ansible-quickstart.md`](docs/kolla-ansible-quickstart.md) | Notas/referência do quickstart Kolla (contexto OpenStack em containers) |
+| [`docs/ports.md`](docs/ports.md) | Mapa de portas VIP, containers Kolla e da app do trabalho |
 | [`notes/topologia-aio.md`](notes/topologia-aio.md) | Topologia do lab (`enp9s0` + `dummy0` + VIP) e mapa aula → passo |
 | [`kolla-config/globals.yml`](kolla-config/globals.yml) | Config Kolla: distro, interfaces, VIP, serviços enable/disable |
 | [`kolla-config/passwords.yml`](kolla-config/passwords.yml) | Senhas dos serviços (incl. `keystone_admin_password` para Horizon) |
@@ -117,7 +118,7 @@ Atalho (bootstrap + prechecks + deploy + fix-wired no fim):
 1. Browser: **http://192.168.1.250** (Horizon) — user `admin`, senha em `kolla-config/passwords.yml` (`keystone_admin_password`)
 2. Estado rápido: `./project/lab.sh status`
 3. OVS só: `./project/lab.sh test-ovs`
-4. Portas: [`ports.md`](ports.md)
+4. Portas: [`docs/ports.md`](docs/ports.md)
 
 ### 4) Parar e voltar a subir
 

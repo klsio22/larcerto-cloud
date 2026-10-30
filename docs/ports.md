@@ -1,7 +1,7 @@
 # Portas — Kolla AIO (core) + app CRUD
 
 Mapa das portas esperadas neste lab. Fonte: defaults do Kolla-Ansible
-(`group_vars/all` no venv) alinhados a [`kolla-config/globals.yml`](kolla-config/globals.yml).
+(`group_vars/all` no venv) alinhados a [`kolla-config/globals.yml`](../kolla-config/globals.yml).
 
 - VIP / Horizon: `http://192.168.1.250` (porta 80 via HAProxy)
 - `network_interface`: `enp9s0` (cabo — gerenciamento; internet do host permanece)
