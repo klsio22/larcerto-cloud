@@ -1,0 +1,43 @@
+---
+- name: Instalar bind9
+  ansible.builtin.apt:
+    name: [bind9, bind9-dnsutils]
+    state: present
+
+- name: Opcoes do bind9 (recursao para a rede privada e para o host)
+  ansible.builtin.template:
+    src: named.conf.options.j2
+    dest: /etc/bind/named.conf.options
+    owner: root
+    group: bind
+    mode: "0644"
+  notify: Reiniciar bind9
+
+- name: Declarar a zona {{ domain }}
+  ansible.builtin.template:
+    src: named.conf.local.j2
+    dest: /etc/bind/named.conf.local
+    owner: root
+    group: bind
+    mode: "0644"
+  notify: Reiniciar bind9
+
+- name: Arquivo da zona {{ domain }}
+  ansible.builtin.template:
+    src: db.zone.j2
+    dest: "/var/cache/bind/db.{{ domain }}"
+    owner: bind
+    group: bind
+    mode: "0644"
+    validate: "named-checkzone {{ domain }} %s"
+  notify: Reiniciar bind9
+
+- name: Conferir a configuracao
+  ansible.builtin.command: named-checkconf
+  changed_when: false
+
+- name: bind9 ativo no boot
+  ansible.builtin.service:
+    name: named
+    state: started
+    enabled: true

@@ -1,0 +1,5 @@
+// {{ ansible_managed }}
+zone "{{ domain }}" {
+    type master;
+    file "/var/cache/bind/db.{{ domain }}";
+};

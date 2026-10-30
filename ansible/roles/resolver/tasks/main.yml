@@ -1,0 +1,25 @@
+---
+# No boot o bind9 ainda nao existe e o systemd-resolved cai para o 8.8.8.8 (2o DNS da
+# subnet), que nao conhece larcerto.com.br. Aqui o dominio passa a ir sempre para a VM dns.
+
+- name: Diretorio de drop-ins do systemd-resolved
+  ansible.builtin.file:
+    path: /etc/systemd/resolved.conf.d
+    state: directory
+    mode: "0755"
+
+- name: "~{{ domain }} sempre pela VM dns"
+  ansible.builtin.template:
+    src: larcerto.conf.j2
+    dest: /etc/systemd/resolved.conf.d/larcerto.conf
+    mode: "0644"
+  notify: Reiniciar systemd-resolved
+
+- name: Aplicar antes de conferir
+  ansible.builtin.meta: flush_handlers
+
+- name: "Conferir db.{{ domain }} -> {{ private_ips.db }}"
+  ansible.builtin.command: getent hosts db.{{ domain }}
+  register: db_lookup
+  changed_when: false
+  failed_when: db_lookup.rc != 0 or private_ips.db not in db_lookup.stdout

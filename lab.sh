@@ -97,10 +97,12 @@ Comandos:
   fix-horizon    Remove container horizon em conflito 409 (depois: lab.sh deploy)
   status         Estado rápido: dummy0, OVS, br-ex, Horizon, VIP
   stop           Para o lab e impede autostart no boot [--remove]
-  start          Sobe o lab já deployado (dummy0 + kolla-* + fix-wired)
+  start          Sobe o lab já deployado (dummy0 + kolla-* + ext-net + fix-wired)
+  ext-net        IP 172.24.4.1/24 na br-ex + NAT: floating IPs alcançáveis do host [--down]
+  dns-host       Split DNS do host: larcerto.com.br -> VM dns [<ip>|--down]
   deploy | bootstrap | prechecks | post-deploy | all | stop-kolla
                  Encaminha para ./project/run-kolla.sh
-                 (deploy / all / post-deploy: depois corre fix-wired automaticamente)
+                 (deploy / all / post-deploy: depois corre fix-wired e ext-net automaticamente)
 
 Exemplos:
   chmod +x project/lab.sh
@@ -275,6 +277,117 @@ cmd_fix_horizon() {
   echo "(Se Horizon já abria no browser e estava healthy, podes ignorar e só usar o login.)"
 }
 
+# Rede externa do Neutron (public) alcancavel pelo host, como a br-ex do DevStack nas aulas (M06/M07).
+EXT_NET_CIDR="172.24.4.0/24"
+EXT_NET_GW="172.24.4.1/24"
+EXT_NET_TAG="lab-ext-net"
+EXT_NET_WAIT="${EXT_NET_WAIT:-30}"
+IP_FORWARD_FILE="${IP_FORWARD_FILE:-/proc/sys/net/ipv4/ip_forward}"
+
+# Chain para liberar o trafego da br-ex: DOCKER-USER se o Docker gerir o iptables, senao
+# FORWARD (a policy dele pode estar em DROP pelo UFW ou pelo Docker). Regras vao na posicao 1.
+forward_chain() {
+  if run_as_root iptables -t filter -nL DOCKER-USER >/dev/null 2>&1; then
+    echo DOCKER-USER
+  else
+    echo FORWARD
+  fi
+}
+
+# ext_net_rules <nif> <chain>: imprime "tabela chain regra..." de cada regra do ext-net.
+ext_net_rules() {
+  local nif="$1" chain="$2"
+  local tag=(-m comment --comment "${EXT_NET_TAG}")
+  printf '%s\n' \
+    "nat POSTROUTING -s ${EXT_NET_CIDR} ! -d ${EXT_NET_CIDR} -o ${nif} ${tag[*]} -j MASQUERADE" \
+    "filter ${chain} -i br-ex -o ${nif} ${tag[*]} -j ACCEPT" \
+    "filter ${chain} -i ${nif} -o br-ex -m conntrack --ctstate RELATED,ESTABLISHED ${tag[*]} -j ACCEPT"
+}
+
+cmd_ext_net() {
+  local mode="up"
+  case "${1:-}" in
+    "") ;;
+    --down) mode="down" ;;
+    *) echo "Uso: lab.sh ext-net [--down]" >&2; return 1 ;;
+  esac
+
+  local nif chain i
+  nif="$(network_iface)"
+  for ((i = 0; i < EXT_NET_WAIT; i++)); do
+    ip link show br-ex >/dev/null 2>&1 && break
+    sleep 1
+  done
+  if ! ip link show br-ex >/dev/null 2>&1; then
+    echo "Erro: br-ex nao existe (lab parado? ./project/lab.sh start)" >&2
+    return 1
+  fi
+  chain="$(forward_chain)"
+
+  # Cada comando de root termina em "|| return 1": chamada dentro de "if !" (start/deploy),
+  # a funcao roda sem set -e e uma falha passaria em silencio.
+  local table ch rule line
+  if [[ "${mode}" == "down" ]]; then
+    step "ext-net --down: removendo ${EXT_NET_GW} da br-ex e regras ${EXT_NET_TAG}"
+    # Remove pelo comentario (vale mesmo se interface ou chain mudaram desde o "up").
+    local current
+    for table in nat filter; do
+      current="$(run_as_root iptables -t "${table}" -S)" || return 1
+      while read -r line; do
+        [[ -n "${line}" ]] || continue
+        # shellcheck disable=SC2086
+        run_as_root iptables -t "${table}" ${line/#-A /-D } || return 1
+      done < <(grep -- "--comment ${EXT_NET_TAG}" <<<"${current}")
+    done
+    if ip -4 -o addr show br-ex 2>/dev/null | grep -q "inet ${EXT_NET_GW} "; then
+      run_as_root ip addr del "${EXT_NET_GW}" dev br-ex || return 1
+    fi
+    echo "ext-net removido. (net.ipv4.ip_forward fica como esta: o Docker tambem depende dele)"
+    return 0
+  fi
+
+  step "ext-net: br-ex com ${EXT_NET_GW} e NAT de ${EXT_NET_CIDR} via ${nif}"
+  if ! ip -4 -o addr show br-ex 2>/dev/null | grep -q "inet ${EXT_NET_GW} "; then
+    run_as_root ip addr add "${EXT_NET_GW}" dev br-ex || return 1
+  fi
+  run_as_root ip link set br-ex up || return 1
+  if [[ "$(cat "${IP_FORWARD_FILE}" 2>/dev/null)" != "1" ]]; then
+    run_as_root sysctl -w net.ipv4.ip_forward=1 >/dev/null || return 1
+  fi
+  while read -r table ch rule; do
+    # shellcheck disable=SC2086
+    if ! run_as_root iptables -t "${table}" -C "${ch}" ${rule} 2>/dev/null; then
+      run_as_root iptables -t "${table}" -I "${ch}" 1 ${rule} || return 1
+    fi
+  done < <(ext_net_rules "${nif}" "${chain}")
+  ip -4 -br addr show br-ex | sed 's/^/    /'
+  echo "ext-net OK (desfazer: ./project/lab.sh ext-net --down)"
+}
+
+# Split DNS do host: so *.larcerto.com.br vai para a VM dns (nao persiste no reboot).
+DNS_DOMAIN="larcerto.com.br"
+INVENTORY_INI="${SCRIPT_DIR}/ansible/inventory/hosts.ini"
+
+cmd_dns_host() {
+  if [[ "${1:-}" == "--down" ]]; then
+    step "dns-host --down: removendo DNS de ${DNS_DOMAIN} da br-ex"
+    run_as_root resolvectl revert br-ex
+    return 0
+  fi
+  local ip="${1:-}"
+  if [[ -z "${ip}" && -f "${INVENTORY_INI}" ]]; then
+    ip="$(grep -A1 '^\[dns\]' "${INVENTORY_INI}" | grep -oE 'ansible_host=[0-9.]+' | cut -d= -f2)"
+  fi
+  if [[ -z "${ip}" ]]; then
+    echo "Uso: lab.sh dns-host [<ip da VM dns>|--down] (sem ip: le ${INVENTORY_INI})" >&2
+    return 1
+  fi
+  step "dns-host: ~${DNS_DOMAIN} -> ${ip} (via br-ex)"
+  run_as_root resolvectl dns br-ex "${ip}"
+  run_as_root resolvectl domain br-ex "~${DNS_DOMAIN}"
+  echo "Teste: resolvectl query www.${DNS_DOMAIN}   (desfazer: ./project/lab.sh dns-host --down)"
+}
+
 cmd_prep() {
   step "prep: dummy0 + OVS do host fora do caminho"
   cmd_dummy0
@@ -417,6 +530,11 @@ cmd_start() {
   echo "Containers Kolla iniciados."
 
   echo
+  if ! cmd_ext_net; then
+    echo "AVISO: ext-net falhou; VMs sem acesso pelo host. Tente: ./project/lab.sh ext-net" >&2
+  fi
+
+  echo
   step "Padrao do lab: cabo (network_interface) fora do br-ex"
   cmd_fix_wired
 }
@@ -433,6 +551,9 @@ cmd_kolla() {
       step "Padrao do lab: cabo (network_interface) fora do br-ex"
       if ! cmd_fix_wired; then
         echo "AVISO: fix-wired nao confirmou IPv4 (cabo desligado?). Deploy Kolla terminou OK." >&2
+      fi
+      if ! cmd_ext_net; then
+        echo "AVISO: ext-net falhou. Deploy Kolla terminou OK; tente: ./project/lab.sh ext-net" >&2
       fi
       ;;
   esac
@@ -452,6 +573,8 @@ case "${ACTION}" in
   status) cmd_status ;;
   stop) cmd_stop "$@" ;;
   start) cmd_start ;;
+  ext-net) cmd_ext_net "$@" ;;
+  dns-host) cmd_dns_host "$@" ;;
   deploy|bootstrap|prechecks|post-deploy|all) cmd_kolla "${ACTION}" "$@" ;;
   stop-kolla) cmd_kolla stop "$@" ;;
   *)

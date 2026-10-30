@@ -54,18 +54,50 @@ case "$1" in
     exit 0 ;;
 esac
 exit 0'
+  # So executa `env ...` (kolla-ansible) e comandos falsos do proprio sandbox.
   fake sudo '
 echo "sudo $*" >>"$FAKE_LOG"
 [[ "$1" == "-n" ]] && exit 0
 [[ "$1" == "env" ]] && exec "$@"
+[[ -x "'"${T}"'/bin/$1" ]] && exec "'"${T}"'/bin/$1" "${@:2}"
 exit 0'
+  # iptables com estado em $T/rules: "tabela chain regra..."
+  fake iptables '
+echo "iptables $*" >>"$FAKE_LOG"
+rules="'"${T}"'/rules"; touch "$rules"
+table=filter
+if [[ "$1" == "-t" ]]; then table="$2"; shift 2; fi
+if [[ "$1" == "-S" ]]; then
+  [[ -n "${FAKE_IPTABLES_S_FAIL:-}" ]] && exit 1
+  awk -v t="$table" "\$1 == t { \$1 = \"-A\"; print }" "$rules"
+  exit 0
+fi
+[[ -n "${FAKE_IPTABLES_FAIL:-}" && "$1" == "-I" ]] && exit 1
+op="$1"; chain="$2"; shift 2
+case "$op" in
+  -nL) [[ "${FAKE_DOCKER_USER:-1}" == 1 && "$chain" == DOCKER-USER ]] ; exit ;;
+  -C) grep -qxF "$table $chain $*" "$rules"; exit ;;
+  -I) shift; echo "$table $chain $*" >>"$rules" ;;
+  -A) echo "$table $chain $*" >>"$rules" ;;
+  -D) awk -v r="$table $chain $*" "!d && \$0 == r { d = 1; next } { print }" "$rules" >"$rules.tmp"; mv "$rules.tmp" "$rules" ;;
+esac
+exit 0'
+  fake sysctl 'echo "sysctl $*" >>"$FAKE_LOG"'
+  fake resolvectl 'echo "resolvectl $*" >>"$FAKE_LOG"'
   fake systemctl '
 echo "systemctl $*" >>"$FAKE_LOG"
 [[ "$1" == "is-active" ]] && { echo inactive; exit 3; }
 exit 0'
+  # br-ex: existe salvo FAKE_NO_BREX=1; o IP fica em $T/brex_addr.
   fake ip '
 echo "ip $*" >>"$FAKE_LOG"
+brex="'"${T}"'/brex_addr"
 case "$*" in
+  "link show br-ex") [[ "${FAKE_NO_BREX:-0}" != 1 ]]; exit ;;
+  "addr add "*" dev br-ex") [[ -n "${FAKE_IP_ADD_FAIL:-}" ]] && exit 1; echo "$3" >"$brex" ;;
+  "addr del "*" dev br-ex") rm -f "$brex" ;;
+  "-4 -o addr show br-ex") [[ -s "$brex" ]] && echo "9: br-ex    inet $(cat "$brex") scope global br-ex" ;;
+  "-4 -br addr show br-ex") echo "br-ex UNKNOWN $(cat "$brex" 2>/dev/null)" ;;
   "-4 -o addr show "*) [[ "${FAKE_IPV4:-1}" == 1 ]] && echo "2: $5    inet 192.168.1.10/24" ;;
   "-br addr show "*) echo "$4 UP 192.168.1.10/24" ;;
   "-br link show "*) echo "$4 UNKNOWN <BROADCAST,NOARP,UP,LOWER_UP>" ;;
@@ -120,6 +152,8 @@ EOF
   export KOLLA_BIN="${T}/venv/bin/kolla-ansible"
   export OS_RELEASE="${T}/os-release"
   export AUTO_STOP_HOST_LIBVIRT=false
+  echo 1 >"${T}/ip_forward"
+  export IP_FORWARD_FILE="${T}/ip_forward"
 }
 
 write_globals() {
@@ -334,6 +368,213 @@ test_docs_cite_common_sh() {
     grep -qF 'lib/common.sh' "${PROJECT_DIR}/docs/${doc}" || fail "${doc} nao cita lib/common.sh" || return 1
     ! grep -qw 'REPO_DIR' "${PROJECT_DIR}/docs/${doc}" || fail "${doc} ainda cita REPO_DIR" || return 1
   done
+}
+
+# ---------------------------------------------------------------- Trabalho 1: S1 ext-net
+
+masq_count() { grep -c 'MASQUERADE' "${T}/rules" 2>/dev/null || true; }
+
+test_extnet_adds_ip_and_nat() {
+  run_lab ext-net
+  expect_rc 0 || return 1
+  [[ "$(cat "${T}/brex_addr" 2>/dev/null)" == "172.24.4.1/24" ]] || fail "br-ex sem 172.24.4.1/24" || return 1
+  grep -qx 'nat POSTROUTING -s 172.24.4.0/24 ! -d 172.24.4.0/24 -o enp9s0 -m comment --comment lab-ext-net -j MASQUERADE' \
+    "${T}/rules" || fail "regra MASQUERADE ausente" || return 1
+  grep -q '^filter DOCKER-USER -i br-ex -o enp9s0 ' "${T}/rules" || fail "FORWARD br-ex -> enp9s0 ausente"
+}
+
+test_extnet_idempotent() {
+  run_lab ext-net && run_lab ext-net
+  expect_rc 0 || return 1
+  [[ "$(masq_count)" -eq 1 ]] || fail "MASQUERADE $(masq_count) vezes" || return 1
+  local adds
+  adds="$(grep -c '^ip addr add 172.24.4.1/24 dev br-ex' "${T}/log")"
+  [[ "${adds}" -eq 1 ]] || fail "ip addr add ${adds} vezes"
+}
+
+test_extnet_down_removes() {
+  run_lab ext-net
+  run_lab ext-net --down
+  expect_rc 0 || return 1
+  [[ ! -s "${T}/brex_addr" ]] || fail "IP continua na br-ex" || return 1
+  ! grep -q 'lab-ext-net' "${T}/rules" || fail "sobraram regras: $(cat "${T}/rules")"
+}
+
+test_extnet_forward_fallback() {
+  # Host real: Docker com "iptables": false -> sem DOCKER-USER; o UFW deixa o FORWARD em DROP.
+  export FAKE_DOCKER_USER=0
+  run_lab ext-net
+  expect_rc 0 || return 1
+  grep -q '^filter FORWARD -i br-ex -o enp9s0 ' "${T}/rules" || fail "regra nao foi para o FORWARD" || return 1
+  ! grep -q 'DOCKER-USER' "${T}/rules" || fail "usou DOCKER-USER inexistente"
+}
+
+test_extnet_down_after_iface_change() {
+  run_lab ext-net
+  write_globals 'network_interface: "eth9"' 'neutron_external_interface: "dummy0"'
+  run_lab ext-net --down
+  expect_rc 0 || return 1
+  ! grep -q 'lab-ext-net' "${T}/rules" || fail "sobraram regras da interface antiga: $(cat "${T}/rules")"
+}
+
+test_start_reports_extnet_failure() {
+  export FAKE_CONTAINER_IDS="k1"
+  local inject
+  for inject in FAKE_IPTABLES_FAIL FAKE_IP_ADD_FAIL; do
+    rm -f "${T}/rules" "${T}/brex_addr"
+    env "${inject}=1" "${REAL_BASH}" "${T}/project/lab.sh" start >"${T}/out" 2>"${T}/err"
+    grep -q '^AVISO: ext-net falhou' "${T}/err" || fail "${inject}: falha do ext-net ficou silenciosa" || return 1
+    ! grep -q '^ext-net OK' "${T}/out" || fail "${inject}: imprimiu ext-net OK apesar da falha" || return 1
+  done
+}
+
+test_extnet_down_reports_iptables_failure() {
+  run_lab ext-net
+  FAKE_IPTABLES_S_FAIL=1 run_lab ext-net --down
+  expect_rc 1 || return 1
+  ! grep -q '^ext-net removido' "${T}/out" || fail "disse removido sem conseguir listar as regras"
+}
+
+test_extnet_ip_forward_untouched() {
+  # 1 -> nao chama sysctl; 0 -> sysctl -w =1; --down nunca chama sysctl (o Docker depende dele).
+  run_lab ext-net
+  ! grep -q '^sysctl' "${T}/log" || fail "chamou sysctl com ip_forward=1" || return 1
+  echo 0 >"${IP_FORWARD_FILE}"
+  run_lab ext-net
+  grep -qx 'sysctl -w net.ipv4.ip_forward=1' "${T}/log" || fail "nao ligou ip_forward" || return 1
+  : >"${T}/log"
+  run_lab ext-net --down
+  ! grep -q '^sysctl' "${T}/log" || fail "--down mexeu no ip_forward"
+}
+
+test_extnet_without_brex_fails() {
+  export FAKE_NO_BREX=1 EXT_NET_WAIT=1
+  run_lab ext-net
+  expect_rc 1
+}
+
+test_start_applies_extnet() {
+  export FAKE_CONTAINER_IDS="k1"
+  run_lab start
+  expect_rc 0 || return 1
+  grep -q '^ip addr add 172.24.4.1/24 dev br-ex' "${T}/log" || fail "start nao aplicou ext-net"
+}
+
+test_dnshost_split_dns() {
+  run_lab dns-host 172.24.4.150
+  expect_rc 0 || return 1
+  grep -qx 'resolvectl dns br-ex 172.24.4.150' "${T}/log" || fail "dns nao configurado" || return 1
+  grep -qx 'resolvectl domain br-ex ~larcerto.com.br' "${T}/log" || fail "dominio de roteamento ausente" || return 1
+  ! grep -E '^resolvectl (dns|domain) ' "${T}/log" | grep -vq 'br-ex' || fail "mexeu em outra interface" || return 1
+  run_lab dns-host --down
+  grep -qx 'resolvectl revert br-ex' "${T}/log" || fail "--down nao reverteu"
+}
+
+# ---------------------------------------------------------------- Trabalho 1: arquivos
+
+test_bootstrap_is_guarded() {
+  local f="${PROJECT_DIR}/cloud/bootstrap.sh"
+  bash -n "${f}" || fail "bash -n falhou" || return 1
+  # Todo "os <recurso> create" fica dentro de um "if ! exists <recurso> ...".
+  local creates guarded kind
+  creates="$(grep -cE '^\s*os (network|subnet|flavor|image|project|group|user) create' "${f}")"
+  guarded=0
+  for kind in network subnet flavor image project group user; do
+    if grep -qE "^\s*os ${kind} create" "${f}"; then
+      grep -B8 -E "^\s*os ${kind} create" "${f}" | grep -qE "if ! exists ${kind} " && guarded=$((guarded + 1))
+    fi
+  done
+  [[ "${creates}" -ge 7 && "${guarded}" -eq "${creates}" ]] || fail "creates=${creates} protegidos=${guarded}"
+}
+
+test_terraform_declares_topology() {
+  local tf="${PROJECT_DIR}/terraform"
+  local vm
+  for vm in dns ca db web; do
+    grep -qE "^\s*${vm}\s*=\s*\{ ip = \"10\.11\.12\.[0-9]+\"" "${tf}/variables.tf" || fail "VM ${vm} ausente" || return 1
+  done
+  grep -q 'resource "openstack_compute_instance_v2" "vm"' "${tf}/main.tf" || fail "instancias ausentes" || return 1
+  grep -A2 'resource "openstack_networking_floatingip_v2" "fip"' "${tf}/main.tf" | grep -q 'for_each = var.vms' \
+    || fail "floating IP nao e por VM" || return 1
+  grep -qE 'db = \[\{ proto = "tcp", port = 3306, cidr = var.subnet_cidr \}\]' "${tf}/main.tf" \
+    || fail "SG db nao restringe 3306 a subnet"
+}
+
+test_dns_zone_records() {
+  local z="${PROJECT_DIR}/ansible/roles/dns/templates/db.zone.j2"
+  local name
+  for name in @ www web dns ca db cloud; do
+    grep -qE "^${name}\s+IN\s+A\s" "${z}" || fail "registro ${name} ausente" || return 1
+  done
+  grep -qE '^cloud\s+IN\s+A\s+\{\{ cloud_vip \}\}' "${z}" || fail "cloud nao usa o VIP" || return 1
+  grep -qE '^db\s+IN\s+A\s+\{\{ private_ips.db \}\}' "${z}" || fail "db nao usa IP privado" || return 1
+  grep -q '^cloud_vip: 192.168.1.250$' "${PROJECT_DIR}/ansible/group_vars/all/main.yml" || fail "VIP errado"
+}
+
+test_ca_role_restores_pki() {
+  local r="${PROJECT_DIR}/ansible/roles/ca/tasks/main.yml"
+  grep -q 'path: "{{ pki_local_dir }}/ca.key"' "${r}" || fail "nao procura a CA salva" || return 1
+  # Bloco de restauracao: entre "Restaurar a PKI salva" e "Criar CA nova".
+  local restore create
+  restore="$(sed -n '/name: Restaurar a PKI salva/,/name: Criar CA nova/p' "${r}")"
+  create="$(sed -n '/name: Criar CA nova/,/name: Certificado wildcard/p' "${r}")"
+  grep -q 'when: local_ca.stat.exists' <<<"${restore}" || fail "restauracao nao depende da copia" || return 1
+  grep -q 'src: "{{ pki_local_dir }}/{{ item | basename }}"' <<<"${restore}" || fail "restauracao nao copia a PKI salva" || return 1
+  grep -q 'loop: "{{ pki_files }}"' <<<"${restore}" || fail "restauracao nao cobre ca.crt/ca.key" || return 1
+  grep -q 'when: not local_ca.stat.exists' <<<"${create}" || fail "build-ca roda mesmo com copia salva" || return 1
+  grep -q 'build-ca' <<<"${create}" || fail "build-ca fora do bloco de criacao" || return 1
+  grep -q 'ansible.builtin.fetch' "${r}" || fail "nao salva a PKI no host" || return 1
+  local member
+  for member in '"ca.crt"' '"private/ca.key"' '"issued/{{ cert_name }}.crt"' '"private/{{ cert_name }}.key"'; do
+    grep -E '^\s*pki_files:' "${r}" | grep -qF -- "${member}" || fail "pki_files sem ${member}" || return 1
+  done
+}
+
+test_crud_pending_documented() {
+  grep -qiE 'CRUD.*pendente|pendente.*CRUD' "${PROJECT_DIR}/../TASKS.md" || fail "TASKS.md nao marca o CRUD pendente" || return 1
+  grep -q 'CREATE TABLE imoveis' "${PROJECT_DIR}/app/README.md" || fail "app/README.md sem o esquema" || return 1
+  [[ ! -e "${PROJECT_DIR}/app/public/index.php" ]] || fail "app ja existe: este check deve ser trocado pelos criterios da S5"
+}
+
+test_no_secrets_tracked() {
+  # Escopo do criterio 30: segredos desta feature (devops1, BD, PKI, tfstate), nao os do Kolla.
+  local repo="${PROJECT_DIR}/.."
+  local hits
+  hits="$(git -C "${repo}" ls-files --cached --others --exclude-standard \
+    'project/cloud/secrets/*' 'project/ansible/group_vars/all/secrets.yml' 'project/ansible/files/pki/*.key' \
+    'project/ansible/files/pki/*.crt' 'project/terraform/*.tfstate*' 'project/ansible/inventory/hosts.ini')"
+  [[ -z "${hits}" ]] || fail "segredos visiveis para o git: ${hits}" || return 1
+  # Conteudo: nenhum arquivo que o git veria nas pastas da feature tem chave ou senha literal.
+  local f
+  while read -r f; do
+    [[ -f "${repo}/${f}" ]] || continue
+    if grep -qiE 'BEGIN [A-Z ]*PRIVATE KEY|password:\s*[^ {$]|db_password:\s*[^ {]|OS_PASSWORD=[^$ ]|token:\s*[^ {$]|\$[a-z_]*(pass|senha|token)[a-z_]*\s*=\s*["'\''][^"'\'']+' "${repo}/${f}" \
+      && [[ "${f}" != *.example ]]; then
+      fail "segredo literal em ${f}" || return 1
+    fi
+  done < <(git -C "${repo}" ls-files --cached --others --exclude-standard \
+    project/cloud project/terraform project/ansible project/app)
+  ! grep -rqE 'password\s*=\s*"[^"]+"' "${PROJECT_DIR}/terraform" || fail "senha no Terraform"
+}
+
+test_extnet_dnshost_dispatched() {
+  run_lab help
+  grep -qw 'ext-net' "${T}/out" && grep -qw 'dns-host' "${T}/out" || fail "help sem ext-net/dns-host" || return 1
+  run_lab ext-net --bogus
+  expect_rc 1 || return 1
+  ! grep -q 'Comando desconhecido' "${T}/err" || fail "ext-net nao despachado" || return 1
+  run_lab dns-host --down
+  ! grep -q 'Comando desconhecido' "${T}/err" || fail "dns-host nao despachado"
+}
+
+test_video_script_timing() {
+  local f="${PROJECT_DIR}/docs/roteiro-video.md"
+  [[ -f "${f}" ]] || fail "roteiro ausente" || return 1
+  grep -qi 'DevOps' "${f}" && grep -qi 'cliente' "${f}" || fail "faltam cenas DevOps/cliente" || return 1
+  # Soma a coluna "Duracao (s)" da tabela de cenas.
+  local total
+  total="$(awk -F'|' '/^\| *[0-9]+ *\|/ { gsub(/ /, "", $4); s += $4 } END { print s + 0 }' "${f}")"
+  [[ "${total}" -ge 300 && "${total}" -le 420 ]] || fail "roteiro soma ${total}s (esperado 300-420)"
 }
 
 # ---------------------------------------------------------------- runner

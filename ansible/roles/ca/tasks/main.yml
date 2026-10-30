@@ -1,0 +1,114 @@
+---
+# CA com easy-rsa (M05). A PKI fica salva em files/pki/ no host (fora do git) e e
+# restaurada quando as VMs sao recriadas: assim o ca.crt importado no Firefox continua valendo.
+
+- name: Instalar easy-rsa
+  ansible.builtin.apt:
+    name: easy-rsa
+    state: present
+
+- name: Diretorio da CA
+  ansible.builtin.set_fact:
+    easyrsa_dir: /home/ubuntu/easy-rsa
+    pki_files: ["ca.crt", "private/ca.key", "issued/{{ cert_name }}.crt", "private/{{ cert_name }}.key"]
+
+- name: Copiar scripts do easy-rsa (como no M05)
+  ansible.builtin.command: cp -R /usr/share/easy-rsa {{ easyrsa_dir }}
+  args:
+    creates: "{{ easyrsa_dir }}/easyrsa"
+
+- name: Ha copia da PKI no host?
+  ansible.builtin.stat:
+    path: "{{ pki_local_dir }}/ca.key"
+  delegate_to: localhost
+  become: false
+  register: local_ca
+
+- name: Restaurar a PKI salva
+  when: local_ca.stat.exists
+  block:
+    - name: init-pki (vazio, so a estrutura)
+      ansible.builtin.command: ./easyrsa --batch init-pki
+      args:
+        chdir: "{{ easyrsa_dir }}"
+        creates: "{{ easyrsa_dir }}/pki"
+
+    - name: Diretorios da PKI
+      ansible.builtin.file:
+        path: "{{ easyrsa_dir }}/pki/{{ item }}"
+        state: directory
+        mode: "0700"
+      loop: [private, issued, reqs, certs_by_serial]
+
+    - name: Base de certificados da CA (exigida para assinar de novo)
+      ansible.builtin.copy:
+        content: ""
+        dest: "{{ easyrsa_dir }}/pki/{{ item }}"
+        force: false
+        mode: "0644"
+      loop: [index.txt, index.txt.attr]
+
+    - name: Serial da CA
+      ansible.builtin.shell: openssl rand -hex 16 > {{ easyrsa_dir }}/pki/serial
+      args:
+        creates: "{{ easyrsa_dir }}/pki/serial"
+
+    - name: Copiar CA e certificado salvos
+      ansible.builtin.copy:
+        src: "{{ pki_local_dir }}/{{ item | basename }}"
+        dest: "{{ easyrsa_dir }}/pki/{{ item }}"
+        mode: "{{ '0600' if item.startswith('private/') else '0644' }}"
+      loop: "{{ pki_files }}"
+      when: (pki_local_dir ~ '/' ~ (item | basename)) is file
+
+- name: Criar CA nova
+  when: not local_ca.stat.exists
+  block:
+    - name: init-pki
+      ansible.builtin.command: ./easyrsa --batch init-pki
+      args:
+        chdir: "{{ easyrsa_dir }}"
+        creates: "{{ easyrsa_dir }}/pki"
+
+    - name: build-ca (CN "CA {{ company_name }}")
+      ansible.builtin.command: ./easyrsa --batch --req-cn="CA {{ company_name }}" build-ca nopass
+      args:
+        chdir: "{{ easyrsa_dir }}"
+        creates: "{{ easyrsa_dir }}/pki/ca.crt"
+
+- name: Certificado wildcard *.{{ domain }} + {{ domain }}
+  ansible.builtin.command: >-
+    ./easyrsa --batch
+    --subject-alt-name="DNS:{{ domain }},DNS:*.{{ domain }}"
+    build-server-full {{ cert_name }} nopass
+  args:
+    chdir: "{{ easyrsa_dir }}"
+    creates: "{{ easyrsa_dir }}/pki/issued/{{ cert_name }}.crt"
+
+- name: Verificar certificado contra a CA
+  ansible.builtin.command: openssl verify -CAfile pki/ca.crt pki/issued/{{ cert_name }}.crt
+  args:
+    chdir: "{{ easyrsa_dir }}"
+  changed_when: false
+
+- name: Dono dos arquivos da CA
+  ansible.builtin.file:
+    path: "{{ easyrsa_dir }}"
+    owner: ubuntu
+    group: ubuntu
+    recurse: true
+
+- name: Salvar PKI no host (files/pki, fora do git)
+  ansible.builtin.fetch:
+    src: "{{ easyrsa_dir }}/pki/{{ item }}"
+    dest: "{{ pki_local_dir }}/"
+    flat: true
+  loop: "{{ pki_files }}"
+
+- name: Chaves privadas salvas no host so para o dono
+  ansible.builtin.file:
+    path: "{{ pki_local_dir }}/{{ item }}"
+    mode: "0600"
+  loop: ["ca.key", "{{ cert_name }}.key"]
+  delegate_to: localhost
+  become: false

@@ -1,0 +1,41 @@
+---
+# Configura as 4 VMs criadas pelo Terraform, nesta ordem:
+# dns (bind9) -> ca (easy-rsa) -> db (MariaDB) -> web (Apache + PHP + HTTPS).
+# Uso: cd project/ansible && ~/venvs/kolla/bin/ansible-playbook site.yml
+
+- name: Esperar as VMs e preparar o basico
+  hosts: all
+  gather_facts: false
+  become: true
+  roles:
+    - common
+
+- name: DNS (REQ10, REQ12)
+  hosts: dns
+  become: true
+  roles:
+    - dns
+
+- name: Resolver interno (larcerto.com.br pela VM dns)
+  hosts: all:!dns
+  become: true
+  roles:
+    - resolver
+
+- name: CA e certificado wildcard (REQ11)
+  hosts: ca
+  become: true
+  roles:
+    - ca
+
+- name: Banco de dados (REQ15, REQ08)
+  hosts: db
+  become: true
+  roles:
+    - db
+
+- name: Servidor web com HTTPS (REQ14, REQ16)
+  hosts: web
+  become: true
+  roles:
+    - web

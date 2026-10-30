@@ -1,0 +1,27 @@
+# {{ ansible_managed }}
+<VirtualHost *:80>
+    ServerName {{ domain }}
+    ServerAlias www.{{ domain }} web.{{ domain }}
+    Redirect permanent / https://{{ domain }}/
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName {{ domain }}
+    ServerAlias www.{{ domain }} web.{{ domain }}
+    DocumentRoot /var/www/larcerto/public
+
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/certs/{{ cert_name }}.crt
+    SSLCertificateKeyFile /etc/ssl/private/{{ cert_name }}.key
+
+    Header always set Strict-Transport-Security "max-age=31536000"
+
+    <Directory /var/www/larcerto/public>
+        Options -Indexes
+        AllowOverride None
+        Require all granted
+    </Directory>
+
+    ErrorLog ${APACHE_LOG_DIR}/larcerto-error.log
+    CustomLog ${APACHE_LOG_DIR}/larcerto-access.log combined
+</VirtualHost>

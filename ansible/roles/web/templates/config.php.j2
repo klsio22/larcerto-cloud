@@ -1,0 +1,8 @@
+<?php
+// {{ ansible_managed }}
+// Conexao com o banco na VM db (lido pela app; fica fora do DocumentRoot).
+return [
+    'dsn'      => 'mysql:host=db.{{ domain }};dbname={{ db_name }};charset=utf8mb4',
+    'user'     => '{{ db_user }}',
+    'password' => '{{ db_password }}',
+];

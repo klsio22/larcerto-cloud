@@ -1,0 +1,23 @@
+---
+- name: Esperar SSH (VM recem-criada)
+  ansible.builtin.wait_for_connection:
+    timeout: 600
+
+- name: Esperar o cloud-init terminar
+  ansible.builtin.command: cloud-init status --wait
+  register: cloud_init
+  changed_when: false
+  # 2 = terminou com avisos recuperaveis (cloud-init recente no jammy)
+  failed_when: cloud_init.rc not in [0, 2]
+
+- name: Coletar facts
+  ansible.builtin.setup:
+
+- name: Hostname com FQDN
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: Atualizar indice do apt
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600

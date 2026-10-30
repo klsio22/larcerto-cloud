@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LarCerto">
+  <title>LarCerto</title>
+  <path d="M8 30 L32 10 L56 30 V54 a4 4 0 0 1 -4 4 H12 a4 4 0 0 1 -4 -4 Z" fill="#1f7a5a"/>
+  <path d="M20 36 L29 45 L45 27" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

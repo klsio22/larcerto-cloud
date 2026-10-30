@@ -1,0 +1,104 @@
+---
+# Apache + PHP 8.1 (M05/M10) com HTTPS do certificado wildcard da CA LarCerto.
+# App: se project/app/public/ existir (S5, CRUD), ela e publicada; senao vai a
+# pagina provisoria, que mostra o logo e testa a conexao com o banco.
+
+- name: Instalar Apache e PHP
+  ansible.builtin.apt:
+    name: [apache2, libapache2-mod-php, php-mysql]
+    state: present
+
+- name: Modulos ssl e headers
+  community.general.apache2_module:
+    name: "{{ item }}"
+    state: present
+  loop: [ssl, headers]
+  notify: Recarregar Apache
+
+- name: Certificado e chave (vindos da VM ca via files/pki)
+  ansible.builtin.copy:
+    src: "{{ pki_local_dir }}/{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { src: "{{ cert_name }}.crt", dest: "/etc/ssl/certs/{{ cert_name }}.crt", mode: "0644" }
+    - { src: "{{ cert_name }}.key", dest: "/etc/ssl/private/{{ cert_name }}.key", mode: "0600" }
+    - { src: "ca.crt", dest: "/etc/ssl/certs/{{ cert_name }}-ca.crt", mode: "0644" }
+  notify: Recarregar Apache
+
+- name: Site {{ domain }} (HTTP -> HTTPS, HTTPS com o certificado)
+  ansible.builtin.template:
+    src: larcerto.conf.j2
+    dest: /etc/apache2/sites-available/larcerto.conf
+    mode: "0644"
+  notify: Recarregar Apache
+
+- name: Habilitar o site e desabilitar o padrao
+  ansible.builtin.command: "{{ item.cmd }}"
+  args:
+    creates: "{{ item.creates | default(omit) }}"
+    removes: "{{ item.removes | default(omit) }}"
+  loop:
+    - { cmd: a2ensite larcerto, creates: /etc/apache2/sites-enabled/larcerto.conf }
+    - { cmd: a2dissite 000-default, removes: /etc/apache2/sites-enabled/000-default.conf }
+  notify: Recarregar Apache
+
+- name: Diretorios da app
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: www-data
+    mode: "0755"
+  loop: [/var/www/larcerto, /var/www/larcerto/public, /var/www/larcerto/public/assets]
+
+- name: Configuracao do banco para a app (fora do DocumentRoot)
+  ansible.builtin.template:
+    src: config.php.j2
+    dest: /var/www/larcerto/config.php
+    owner: root
+    group: www-data
+    mode: "0640"
+
+- name: Ha app CRUD em project/app/public?
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../app/public/index.php"
+  delegate_to: localhost
+  become: false
+  register: crud_app
+
+- name: Publicar a app CRUD (S5)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../app/public/"
+    dest: /var/www/larcerto/public/
+    owner: root
+    group: www-data
+    mode: u=rwX,g=rX,o=rX
+  when: crud_app.stat.exists
+
+- name: Pagina provisoria (S5 pendente)
+  when: not crud_app.stat.exists
+  block:
+    - name: index.php provisorio
+      ansible.builtin.template:
+        src: placeholder.php.j2
+        dest: /var/www/larcerto/public/index.php
+        owner: root
+        group: www-data
+        mode: "0644"
+
+    - name: Logo
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../app/assets/logo.svg"
+        dest: /var/www/larcerto/public/assets/logo.svg
+        owner: root
+        group: www-data
+        mode: "0644"
+
+- name: Apache ativo no boot
+  ansible.builtin.service:
+    name: apache2
+    state: started
+    enabled: true

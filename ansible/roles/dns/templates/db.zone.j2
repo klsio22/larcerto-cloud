@@ -1,0 +1,19 @@
+; {{ ansible_managed }}
+; Zona {{ domain }} - nomes publicos apontam para os floating IPs (alcancaveis do host);
+; db aponta para o IP privado (so a web acessa o banco).
+$TTL 300
+@   IN  SOA dns.{{ domain }}. admin.{{ domain }}. (
+        {{ ansible_date_time.date | replace('-', '') }}01 ; serial (AAAAMMDD01: muda no maximo 1x por dia)
+        3600       ; refresh
+        600        ; retry
+        604800     ; expire
+        300 )      ; negative TTL
+
+@       IN  NS  dns.{{ domain }}.
+@       IN  A   {{ hostvars[groups['web'][0]].ansible_host }}
+www     IN  A   {{ hostvars[groups['web'][0]].ansible_host }}
+web     IN  A   {{ hostvars[groups['web'][0]].ansible_host }}
+dns     IN  A   {{ hostvars[groups['dns'][0]].ansible_host }}
+ca      IN  A   {{ hostvars[groups['ca'][0]].ansible_host }}
+db      IN  A   {{ private_ips.db }}
+cloud   IN  A   {{ cloud_vip }}

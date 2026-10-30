@@ -82,12 +82,14 @@ Encaminha a ação para [`run-kolla.sh`](run-kolla.sh.md). Se o Kolla falhar, o 
 | `fix-horizon` | `cmd_fix_horizon` | Remove container `horizon` (resolve 409 Conflict no recreate) |
 | `status` | `cmd_status` | Estado: interfaces, OVS, Horizon, HTTP no VIP |
 | `stop` | `cmd_stop` | Para `kolla-*`, desabilita autostart no boot e para containers |
-| `start` | `cmd_start` | Sobe o lab já deployado: `dummy0` + `kolla-*` + `fix-wired` |
+| `start` | `cmd_start` | Sobe o lab já deployado: `dummy0` + `kolla-*` + `ext-net` + `fix-wired` |
+| `ext-net` | `cmd_ext_net` | IP `172.24.4.1/24` na `br-ex` + NAT/FORWARD: floating IPs alcançáveis do host (`--down` desfaz) |
+| `dns-host` | `cmd_dns_host` | Split DNS do host: só `~larcerto.com.br` na `br-ex` vai para a VM `dns` (`--down` desfaz) |
 | `bootstrap` | `cmd_kolla` | → `run-kolla.sh bootstrap` |
 | `prechecks` | `cmd_kolla` | → `run-kolla.sh prechecks` |
-| `deploy` | `cmd_kolla` | → `run-kolla.sh deploy` + `fix-wired` |
-| `post-deploy` | `cmd_kolla` | → `run-kolla.sh post-deploy` + `fix-wired` |
-| `all` | `cmd_kolla` | → `run-kolla.sh all` + `fix-wired` |
+| `deploy` | `cmd_kolla` | → `run-kolla.sh deploy` + `fix-wired` + `ext-net` |
+| `post-deploy` | `cmd_kolla` | → `run-kolla.sh post-deploy` + `fix-wired` + `ext-net` |
+| `all` | `cmd_kolla` | → `run-kolla.sh all` + `fix-wired` + `ext-net` |
 | `stop-kolla` | `cmd_kolla` | → `run-kolla.sh stop` |
 | `help` | `usage` | Ajuda |
 
@@ -162,6 +164,22 @@ Fluxo: `systemctl stop` + `disable` das unidades `kolla-*` → `docker stop` →
 
 Reboot **sem** `stop` continua a subir o lab (unidades Kolla ainda enabled).
 
+#### `cmd_ext_net` (`ext-net`)
+
+Equivalente automatizado do que o professor refaz à mão no DevStack após reboot (M06/M07):
+
+1. Espera a `br-ex` existir (até `EXT_NET_WAIT`, padrão 30 s)
+2. `ip addr add 172.24.4.1/24 dev br-ex` (se ainda não tiver) e `ip link set br-ex up`
+3. `net.ipv4.ip_forward=1` (se estiver 0)
+4. Regras com comentário `lab-ext-net`: `MASQUERADE` de `172.24.4.0/24` saindo pelo `network_interface`, e `ACCEPT` de/para a `br-ex` na posição 1 da chain `DOCKER-USER` (se o Docker gerir o iptables) ou do `FORWARD`. Neste host o Docker roda com `"iptables": false` e é o **UFW** que deixa o `FORWARD` em `DROP`; depois de um `ufw reload`, se as regras sumirem rode `ext-net`; se ficarem atrás das do UFW rode `ext-net --down` e `ext-net` (o `-C` acha a regra existente e não a recoloca na posição 1)
+5. Idempotente: cada regra só é inserida se `iptables -C` não a encontrar
+
+`ext-net --down` remove pelo comentário todas as regras `lab-ext-net` (mesmo se a interface mudou) e o IP. Não desfaz `ip_forward`, de que o Docker também depende. Nada disso persiste no reboot; o `start` reaplica. Uma falha em qualquer comando faz o `ext-net` retornar 1 e o `start`/`deploy` mostrar `AVISO`.
+
+#### `cmd_dns_host` (`dns-host`)
+
+`resolvectl dns br-ex <ip>` + `resolvectl domain br-ex ~larcerto.com.br`: só o domínio do lab passa a ser resolvido pela VM `dns`; o resto continua no DNS atual. Sem argumento, lê o IP da VM `dns` de `project/ansible/inventory/hosts.ini` (gerado pelo Terraform). `--down` faz `resolvectl revert br-ex`. Não persiste no reboot.
+
 #### `cmd_start` (`start`)
 
 Sobe um lab **já deployado**, sem `kolla-ansible deploy`:
@@ -170,7 +188,8 @@ Sobe um lab **já deployado**, sem `kolla-ansible deploy`:
 2. Recria/ativa `dummy0` (some no reboot)
 3. `systemctl enable --now` nas unidades `kolla-*`
 4. `docker start` nos containers Kolla ainda parados
-5. `cmd_fix_wired` (cabo fora do `br-ex`)
+5. `cmd_ext_net` (falha vira AVISO)
+6. `cmd_fix_wired` (cabo fora do `br-ex`)
 
 ---
 

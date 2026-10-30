@@ -1,0 +1,9 @@
+# Gerado pelo Terraform (project/terraform) - nao editar a mao.
+%{ for name, vm in vms ~}
+[${name}]
+${name}.larcerto.com.br ansible_host=${fips[name]} private_ip=${vm.ip}
+
+%{ endfor ~}
+[all:vars]
+ansible_user=ubuntu
+ansible_ssh_private_key_file=${private_key_path}

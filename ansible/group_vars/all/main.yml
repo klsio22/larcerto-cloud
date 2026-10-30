@@ -1,0 +1,25 @@
+---
+company_name: LarCerto
+domain: larcerto.com.br
+
+# Horizon (VIP do Kolla) - REQ12: cloud.larcerto.com.br
+cloud_vip: 192.168.1.250
+
+# IPs privados fixos (iguais aos de project/terraform/variables.tf)
+private_ips:
+  dns: 10.11.12.10
+  ca: 10.11.12.11
+  db: 10.11.12.12
+  web: 10.11.12.13
+private_cidr: 10.11.12.0/24
+
+# Banco usado pela app (a tabela imoveis e da S5, ainda pendente)
+db_name: larcerto
+db_user: larcerto
+db_user_host: "10.11.12.%"   # so a rede privada (web)
+
+# PKI: copia local da CA e do certificado (fora do git), restaurada a cada apply
+pki_local_dir: "{{ playbook_dir }}/files/pki"
+cert_name: larcerto
+
+# db_password vem de group_vars/all/secrets.yml (fora do git; ver secrets.yml.example)

@@ -1,0 +1,17 @@
+// {{ ansible_managed }}
+acl lab {
+    localhost;
+    {{ private_cidr }};
+    172.24.4.0/24;   // host e floating IPs (br-ex)
+};
+
+options {
+    directory "/var/cache/bind";
+    recursion yes;
+    allow-query { lab; };
+    allow-recursion { lab; };
+    forwarders { 8.8.8.8; 1.1.1.1; };
+    dnssec-validation auto;
+    listen-on { any; };
+    listen-on-v6 { none; };
+};

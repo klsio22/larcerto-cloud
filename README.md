@@ -2,6 +2,10 @@
 
 Labs e entrega do **Trabalho 1** (nuvem privada + app web CRUD).
 
+## Trabalho 1 — LarCerto
+
+Passo a passo da nuvem do trabalho (rede externa, projeto, VMs, DNS, CA, HTTPS): [`docs/nuvem-larcerto.md`](docs/nuvem-larcerto.md). O CRUD ainda está pendente: [`app/README.md`](app/README.md).
+
 ## Fontes
 
 1. **Videoaulas 06–10** — [`transcricoes/`](../transcricoes/) · links em [`videos/README.md`](../videos/README.md)
@@ -20,6 +24,12 @@ project/
   lab.sh
   run-kolla.sh
   all-in-one                 # inventário Ansible (usado pelo run-kolla.sh)
+  lib/                       # helpers dos scripts (common.sh, zorin_facts.py)
+  tests/                     # test-scripts.sh (sem tocar no host) e cloud-checks.sh (nuvem montada)
+  cloud/bootstrap.sh         # admin: rede public, flavor, imagem, projeto larcerto, devops1
+  terraform/                 # infra do projeto larcerto (4 VMs, redes, SGs, floating IPs)
+  ansible/                   # configuração das VMs: dns, ca, db, web
+  app/                       # CRUD LarCerto (pendente) + logo
   docs/                      # toda a documentação de apoio
     enunciado-trabalho-1.md
     kolla-ansible-quickstart.md
