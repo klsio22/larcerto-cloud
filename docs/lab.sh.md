@@ -6,29 +6,33 @@ Entrypoint único do lab AIO (dummy0, OVS host, testes, stop/start, fixes e depl
 ./project/lab.sh <comando> [opções]
 ```
 
-Código: [`../lab.sh`](../lab.sh).
+Código: [`../lab.sh`](../lab.sh). Helpers compartilhados com o `run-kolla.sh` ficam em [`../lib/common.sh`](../lib/common.sh), carregado com `source`.
 
 ## Variáveis e paths
 
 | Variável | Valor | Uso |
 |----------|-------|-----|
 | `SCRIPT_DIR` | pasta `project/` | Base dos scripts |
-| `REPO_DIR` | raiz do repo | Contexto do repositório |
-| `GLOBALS_YML` | `kolla-config/globals.yml` | Lê `network_interface` e `neutron_external_interface` |
+| `GLOBALS_YML` | `kolla-config/globals.yml` | Lê `network_interface`, `neutron_external_interface` e `kolla_internal_vip_address` (definido em `lib/common.sh`) |
 | `DOCKER` | array (`docker` ou `sudo docker`) | Preenchido por `init_docker` |
 
 ## Helpers internos
 
-### `run_as_root`
+### Em `lib/common.sh` (compartilhados)
+
+- `step <texto>` — imprime o cabeçalho de etapa `==> <texto>`.
+- `read_globals <key> <default>` — lê linha ativa `key: value` em `globals.yml` (ignora comentários); imprime o default se ausente.
+
+### `run_as_root` (`lib/common.sh`)
 
 Executa um comando como root, nesta ordem:
 
 1. Já é root (`EUID == 0`)
 2. `sudo -n` (NOPASSWD)
-3. Docker privilegiado + `nsenter` no PID 1 (grupo `docker`)
+3. Docker privilegiado + `nsenter -- <cmd>` no PID 1 (grupo `docker`)
 4. `sudo` interativo (pede senha)
 
-### `init_docker` / `docker_cmd`
+### `init_docker` / `docker_cmd` (`lib/common.sh`)
 
 - `init_docker` — define `DOCKER=(docker)` ou `DOCKER=(sudo docker)`; falha se nenhum tiver acesso.
 - `docker_cmd` — chama `init_docker` e executa `"${DOCKER[@]}" "$@"`.
@@ -37,17 +41,20 @@ Executa um comando como root, nesta ordem:
 
 Lista unidades systemd `kolla-*.service` via `systemctl list-unit-files` (visível mesmo depois de disable/reboot). Usado por `stop` e `start`.
 
-### `read_globals_iface` / `network_iface` / `external_iface`
+### `network_iface` / `external_iface` / `vip_address`
 
-- `read_globals_iface <key> <default>` — lê linha ativa `key: value` em `globals.yml` (ignora comentários).
+Leem `globals.yml` via `read_globals`:
+
 - `network_iface` — `network_interface` (default `enp9s0`).
 - `external_iface` — `neutron_external_interface` (default `dummy0`).
+- `vip_address` — `kolla_internal_vip_address` (default `192.168.1.250`).
 
 ### `ovs_db_running` / `br_ex_ports` / `mgmt_on_br_ex`
 
 - `ovs_db_running` — true se o container `openvswitch_db` estiver Up.
 - `br_ex_ports` — lista portas do bridge `br-ex` via `ovs-vsctl` no container.
 - `mgmt_on_br_ex` — true se a NIC de gestão (`network_iface`) estiver em `br-ex`.
+- `print_br_ex_ports` — imprime as portas de `br-ex` indentadas, ou `(vazio)`.
 
 ### `warn_or_fail_mgmt_on_br_ex`
 
@@ -59,7 +66,7 @@ Imprime help CLI (`help` / `-h` / `--help`).
 
 ### `cmd_kolla`
 
-Encaminha a ação para [`run-kolla.sh`](run-kolla.sh.md). Se a ação for `deploy`, `all` ou `post-deploy` e o Kolla terminar com sucesso, corre `cmd_fix_wired` automaticamente (NIC de gestão fora do `br-ex`).
+Encaminha a ação para [`run-kolla.sh`](run-kolla.sh.md). Se o Kolla falhar, o `lab.sh` sai com o mesmo código. Se a ação for `deploy`, `all` ou `post-deploy` e o Kolla terminar com sucesso, corre `cmd_fix_wired` automaticamente (NIC de gestão fora do `br-ex`); se o `fix-wired` falhar, imprime `AVISO` no stderr e sai com 0, porque o deploy deu certo.
 
 ---
 
@@ -111,7 +118,7 @@ Usar antes do 1.º deploy ou após conflito com OVS do host.
 1. Valida que `network_interface` ≠ `neutron_external_interface`
 2. Se `openvswitch_db` estiver Up e a NIC de gestão estiver em `br-ex`: `ovs-vsctl del-port br-ex <nic>`
 3. Ativa a ligação NetworkManager (`nmcli connection up` ou `nmcli device connect`)
-4. Falha se a NIC ficar sem IPv4
+4. Falha (exit 1) se a NIC ficar sem IPv4, se as duas interfaces forem iguais ou se não houver `nmcli`
 
 Também corre automaticamente no fim de `deploy` / `all` / `post-deploy` / `start`.
 
@@ -140,7 +147,7 @@ Imprime:
 - `openvswitch-switch` no host
 - Containers OVS e Horizon
 - Aviso se gestão estiver em `br-ex`
-- HTTP no VIP Horizon (`http://192.168.1.250/auth/login/`)
+- HTTP no VIP Horizon (`http://<kolla_internal_vip_address>/auth/login/`, default `192.168.1.250`)
 
 #### `cmd_stop` (`stop`)
 
@@ -166,6 +173,10 @@ Sobe um lab **já deployado**, sem `kolla-ansible deploy`:
 5. `cmd_fix_wired` (cabo fora do `br-ex`)
 
 ---
+
+## Testes
+
+`bash project/tests/test-scripts.sh [teste ...]` testa `lab.sh` e `run-kolla.sh` com comandos falsos no `PATH` (nada toca o host; não rodar como root).
 
 ## Exemplos
 

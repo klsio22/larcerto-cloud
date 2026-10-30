@@ -4,47 +4,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-GLOBALS_YML="${SCRIPT_DIR}/kolla-config/globals.yml"
-
-run_as_root() {
-  if [[ "${EUID}" -eq 0 ]]; then
-    "$@"
-    return 0
-  fi
-  # Preferir sudo sem senha (NOPASSWD); senao Docker privilegiado (grupo docker).
-  if sudo -n true 2>/dev/null; then
-    sudo "$@"
-    return $?
-  fi
-  if docker info >/dev/null 2>&1; then
-    docker run --rm --privileged --pid=host alpine:3.20 \
-      nsenter -t 1 -m -u -i -n "$@"
-    return $?
-  fi
-  echo "Precisa de root: configure sudo NOPASSWD, entre no grupo docker, ou digite a senha." >&2
-  sudo "$@"
-}
-
-DOCKER=()
-init_docker() {
-  if [[ "${#DOCKER[@]}" -gt 0 ]]; then
-    return 0
-  fi
-  if docker info >/dev/null 2>&1; then
-    DOCKER=(docker)
-  elif sudo docker info >/dev/null 2>&1; then
-    DOCKER=(sudo docker)
-  else
-    echo "Erro: sem permissao para acessar o Docker." >&2
-    exit 1
-  fi
-}
-
-docker_cmd() {
-  init_docker
-  "${DOCKER[@]}" "$@"
-}
+# run_as_root, docker_cmd, read_globals, step
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
 
 # Unidades systemd kolla-* (list-unit-files sobrevive a reboot / disable).
 list_kolla_unit_files() {
@@ -55,29 +17,16 @@ list_kolla_unit_files() {
     | awk '$1 ~ /^kolla-.*\.service$/ { print $1 }'
 }
 
-# Lê "key: value" ativo (não comentado) de globals.yml.
-read_globals_iface() {
-  local key="$1"
-  local default="$2"
-  local val=""
-  if [[ -f "${GLOBALS_YML}" ]]; then
-    val="$(grep -E "^${key}:" "${GLOBALS_YML}" 2>/dev/null | head -1 \
-      | sed -E 's/^[^:]+:[[:space:]]*"?([^"#]+)"?.*/\1/' \
-      | tr -d '[:space:]')"
-  fi
-  if [[ -z "${val}" ]]; then
-    printf '%s\n' "${default}"
-  else
-    printf '%s\n' "${val}"
-  fi
-}
-
 network_iface() {
-  read_globals_iface network_interface enp9s0
+  read_globals network_interface enp9s0
 }
 
 external_iface() {
-  read_globals_iface neutron_external_interface dummy0
+  read_globals neutron_external_interface dummy0
+}
+
+vip_address() {
+  read_globals kolla_internal_vip_address 192.168.1.250
 }
 
 ovs_db_running() {
@@ -97,6 +46,17 @@ mgmt_on_br_ex() {
   br_ex_ports | grep -qx "${nif}"
 }
 
+# Imprime portas indentadas, ou "(vazio)".
+print_br_ex_ports() {
+  local ports
+  ports="$(br_ex_ports)"
+  if [[ -z "${ports}" ]]; then
+    echo "    (vazio)"
+  else
+    printf '%s\n' "${ports}" | sed 's/^/    /'
+  fi
+}
+
 warn_or_fail_mgmt_on_br_ex() {
   # $1 = warn | fail
   local mode="${1:-warn}"
@@ -105,7 +65,7 @@ warn_or_fail_mgmt_on_br_ex() {
   if ! ovs_db_running; then
     return 0
   fi
-  echo "==> Portas br-ex (externa deve ser só $(external_iface))"
+  step "Portas br-ex (externa deve ser só $(external_iface))"
   local ports
   ports="$(br_ex_ports)"
   if [[ -z "${ports}" ]]; then
@@ -128,6 +88,7 @@ usage() {
 Uso: ./project/lab.sh <comando> [opções]
 
 Comandos:
+  help           Mostra esta ajuda (-h, --help)
   prep           dummy0 + desativa OVS do host (antes do 1º deploy / após conflito OVS)
   dummy0         Cria/ativa interface dummy0 (neutron_external_interface)
   fix-ovs        Para OVS do host, limpa /run/openvswitch, remove containers OVS Kolla
@@ -177,11 +138,11 @@ cmd_dummy0() {
 }
 
 cmd_fix_ovs() {
-  echo "==> Parar e desabilitar openvswitch-switch do host"
+  step "Parar e desabilitar openvswitch-switch do host"
   run_as_root systemctl stop openvswitch-switch 2>/dev/null || true
   run_as_root systemctl disable openvswitch-switch 2>/dev/null || true
 
-  echo "==> Limpar runtime em /run/openvswitch"
+  step "Limpar runtime em /run/openvswitch"
   run_as_root mkdir -p /run/openvswitch
   run_as_root chmod 770 /run/openvswitch
   run_as_root rm -f \
@@ -191,10 +152,10 @@ cmd_fix_ovs() {
     /run/openvswitch/ovsdb-server.*.ctl \
     /run/openvswitch/ovs-vswitchd.*.ctl
 
-  echo "==> Remover containers Kolla OVS (serão recriados no deploy)"
+  step "Remover containers Kolla OVS (serão recriados no deploy)"
   docker_cmd rm -f openvswitch_db openvswitch_vswitchd 2>/dev/null || true
 
-  echo "==> Estado"
+  step "Estado"
   systemctl is-active openvswitch-switch 2>/dev/null || true
   ls -la /run/openvswitch 2>/dev/null || true
   docker_cmd ps -a --filter name=openvswitch --format 'table {{.Names}}\t{{.Status}}' 2>/dev/null || true
@@ -205,34 +166,34 @@ cmd_fix_wired() {
   local nif ext
   nif="$(network_iface)"
   ext="$(external_iface)"
-  echo "==> Rede: network_interface=${nif} neutron_external=${ext}"
+  step "Rede: network_interface=${nif} neutron_external=${ext}"
 
   if [[ "${nif}" == "${ext}" ]]; then
     echo "Erro: network_interface e neutron_external_interface sao iguais (${nif}). Corrige globals.yml." >&2
-    exit 1
+    return 1
   fi
 
   if ovs_db_running; then
-    echo "==> Portas br-ex antes"
-    br_ex_ports | sed 's/^/    /' || echo "    (vazio)"
-    if br_ex_ports | grep -qx "${nif}"; then
-      echo "==> Removendo ${nif} de br-ex (nao remove ${ext})"
+    step "Portas br-ex antes"
+    print_br_ex_ports
+    if mgmt_on_br_ex; then
+      step "Removendo ${nif} de br-ex (nao remove ${ext})"
       docker_cmd exec openvswitch_db ovs-vsctl --if-exists del-port br-ex "${nif}"
     else
       echo "    ${nif} nao esta em br-ex"
     fi
-    echo "==> Portas br-ex depois"
-    br_ex_ports | sed 's/^/    /' || echo "    (vazio)"
+    step "Portas br-ex depois"
+    print_br_ex_ports
   else
-    echo "==> openvswitch_db nao esta Up — so a restaurar NetworkManager"
+    step "openvswitch_db nao esta Up — so a restaurar NetworkManager"
   fi
 
   if ! command -v nmcli >/dev/null 2>&1; then
     echo "Erro: nmcli nao encontrado." >&2
-    exit 1
+    return 1
   fi
 
-  echo "==> NetworkManager: ativar cabo em ${nif}"
+  step "NetworkManager: ativar cabo em ${nif}"
   local conn
   conn="$(nmcli -t -f NAME,DEVICE connection show 2>/dev/null | awk -F: -v d="${nif}" '$2 == d { print $1; exit }')"
   if [[ -n "${conn}" ]]; then
@@ -243,18 +204,18 @@ cmd_fix_wired() {
   fi
 
   sleep 2
-  echo "==> Enderecos em ${nif}"
+  step "Enderecos em ${nif}"
   ip -br addr show "${nif}" | sed 's/^/    /'
   if ! ip -4 -o addr show "${nif}" 2>/dev/null | grep -q 'inet '; then
     echo "FALHA: ${nif} sem IPv4. Verifica cabo/DHCP." >&2
-    exit 1
+    return 1
   fi
   echo "Cabo OK"
 }
 
 cmd_test_ovs() {
   local fail=0
-  echo "==> Host openvswitch-switch (deve estar inactive)"
+  step "Host openvswitch-switch (deve estar inactive)"
   local host_ovs
   host_ovs="$(systemctl is-active openvswitch-switch 2>/dev/null || true)"
   echo "    status: ${host_ovs:-unknown}"
@@ -263,7 +224,7 @@ cmd_test_ovs() {
     fail=1
   fi
 
-  echo "==> Containers"
+  step "Containers"
   docker_cmd ps -a --filter name=openvswitch --format '    {{.Names}}\t{{.Status}}' || true
   local c
   for c in openvswitch_db openvswitch_vswitchd; do
@@ -273,7 +234,7 @@ cmd_test_ovs() {
     fi
   done
 
-  echo "==> ovs-vsctl --no-wait show (mesmo check do Kolla)"
+  step "ovs-vsctl --no-wait show (mesmo check do Kolla)"
   local tmp
   tmp="$(mktemp)"
   if docker_cmd exec openvswitch_db ovs-vsctl --no-wait show >"${tmp}" 2>&1; then
@@ -286,7 +247,7 @@ cmd_test_ovs() {
   fi
   rm -f "${tmp}"
 
-  echo "==> /run/openvswitch"
+  step "/run/openvswitch"
   if ls -la /run/openvswitch >/dev/null 2>&1; then
     ls -la /run/openvswitch | sed 's/^/    /'
   else
@@ -307,7 +268,7 @@ cmd_test_ovs() {
 }
 
 cmd_fix_horizon() {
-  echo "==> Remover container horizon (resolve 409 Conflict no recreate)"
+  step "Remover container horizon (resolve 409 Conflict no recreate)"
   docker_cmd rm -f horizon 2>/dev/null || true
   docker_cmd ps -a --filter name=horizon --format 'table {{.Names}}\t{{.Status}}' || true
   echo "Pronto. Recria com: ./project/lab.sh deploy"
@@ -315,7 +276,7 @@ cmd_fix_horizon() {
 }
 
 cmd_prep() {
-  echo "==> prep: dummy0 + OVS do host fora do caminho"
+  step "prep: dummy0 + OVS do host fora do caminho"
   cmd_dummy0
   cmd_fix_ovs
   echo
@@ -332,35 +293,37 @@ cmd_status() {
   nif="$(network_iface)"
   ext="$(external_iface)"
 
-  echo "==> interfaces (globals)"
+  step "interfaces (globals)"
   echo "    network_interface=${nif}"
   echo "    neutron_external=${ext}"
 
-  echo "==> ${ext}"
+  step "${ext}"
   if ip link show "${ext}" >/dev/null 2>&1; then
     ip -br link show "${ext}" | sed 's/^/    /'
   else
     echo "    ausente — ./project/lab.sh dummy0"
   fi
 
-  echo "==> ${nif} (cabo / gestao)"
+  step "${nif} (cabo / gestao)"
   if ip link show "${nif}" >/dev/null 2>&1; then
     ip -br addr show "${nif}" | sed 's/^/    /'
   else
     echo "    interface ausente"
   fi
 
-  echo "==> openvswitch-switch (host)"
+  step "openvswitch-switch (host)"
   echo "    $(systemctl is-active openvswitch-switch 2>/dev/null || true)"
 
-  echo "==> containers OVS / Horizon"
+  step "containers OVS / Horizon"
   docker_cmd ps -a --filter name=openvswitch --format '    {{.Names}}\t{{.Status}}' 2>/dev/null || true
   docker_cmd ps -a --filter name=horizon --format '    {{.Names}}\t{{.Status}}' 2>/dev/null || true
 
   warn_or_fail_mgmt_on_br_ex warn || true
 
-  echo "==> VIP Horizon http://192.168.1.250"
-  if curl -s -o /dev/null -w '    HTTP %{http_code}\n' --connect-timeout 3 http://192.168.1.250/auth/login/ 2>/dev/null; then
+  local vip
+  vip="$(vip_address)"
+  step "VIP Horizon http://${vip}"
+  if curl -s -o /dev/null -w '    HTTP %{http_code}\n' --connect-timeout 3 "http://${vip}/auth/login/" 2>/dev/null; then
     :
   else
     echo "    sem resposta (deploy/post-deploy ainda nao prontos?)"
@@ -437,40 +400,37 @@ cmd_start() {
     exit 1
   fi
 
-  echo "==> dummy0 (some no reboot; Neutron precisa dela)"
+  step "dummy0 (some no reboot; Neutron precisa dela)"
   cmd_dummy0
 
   local kolla_services=()
   mapfile -t kolla_services < <(list_kolla_unit_files)
   if [[ "${#kolla_services[@]}" -gt 0 ]]; then
-    echo "==> Habilitar e iniciar servicos kolla-*"
+    step "Habilitar e iniciar servicos kolla-*"
     run_as_root systemctl enable --now "${kolla_services[@]}" 2>/dev/null || true
   else
-    echo "==> Nenhuma unidade kolla-* — a subir containers via Docker"
+    step "Nenhuma unidade kolla-* — a subir containers via Docker"
   fi
 
-  echo "==> Garantir containers Kolla Up"
+  step "Garantir containers Kolla Up"
   "${DOCKER[@]}" ps -aq --filter label=kolla_version | xargs -r "${DOCKER[@]}" start >/dev/null
   echo "Containers Kolla iniciados."
 
   echo
-  echo "==> Padrao do lab: cabo (network_interface) fora do br-ex"
+  step "Padrao do lab: cabo (network_interface) fora do br-ex"
   cmd_fix_wired
 }
 
 cmd_kolla() {
   local action="$1"
   shift || true
+  # Com set -e, uma falha aqui encerra o lab.sh com o mesmo codigo do run-kolla.sh.
   "${SCRIPT_DIR}/run-kolla.sh" "${action}" "$@"
-  local rc=$?
-  if [[ "${rc}" -ne 0 ]]; then
-    return "${rc}"
-  fi
   # Padrao do lab AIO: apos subir a nuvem, NIC de gestao fora do br-ex.
   case "${action}" in
     deploy|all|post-deploy)
       echo
-      echo "==> Padrao do lab: cabo (network_interface) fora do br-ex"
+      step "Padrao do lab: cabo (network_interface) fora do br-ex"
       if ! cmd_fix_wired; then
         echo "AVISO: fix-wired nao confirmou IPv4 (cabo desligado?). Deploy Kolla terminou OK." >&2
       fi

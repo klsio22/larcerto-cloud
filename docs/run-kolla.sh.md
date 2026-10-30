@@ -6,7 +6,7 @@ Wrapper para executar `kolla-ansible` com os caminhos deste projeto. Normalmente
 ./project/run-kolla.sh {all|bootstrap|prechecks|deploy|post-deploy|stop}
 ```
 
-Código: [`../run-kolla.sh`](../run-kolla.sh).
+Código: [`../run-kolla.sh`](../run-kolla.sh). Helpers compartilhados com o `lab.sh` em [`../lib/common.sh`](../lib/common.sh); normalização de facts do Zorin em [`../lib/zorin_facts.py`](../lib/zorin_facts.py).
 
 ## Paths e variáveis de ambiente
 
@@ -20,7 +20,8 @@ Código: [`../run-kolla.sh`](../run-kolla.sh).
 | `EXTRA_VARS` | (vazio) | Extra vars Ansible (`-e`) |
 | `FORCE_UBUNTU_FACTS` | `true` | Em Zorin OS, normaliza facts para Ubuntu/Noble |
 | `USE_TEST_IMAGES` | `true` | Em `prechecks`, passa `--use-test-images` |
-| `AUTO_STOP_HOST_LIBVIRT` | `true` | Para libvirtd/virtlogd do host antes do step |
+| `AUTO_STOP_HOST_LIBVIRT` | `true` | Para libvirtd/virtlogd do host antes de cada step |
+| `OS_RELEASE` | `/etc/os-release` | Arquivo lido para detectar Zorin (usado pelos testes) |
 
 Também resolve `ORIGINAL_USER` / `ORIGINAL_HOME` (respeita `SUDO_USER`) para manter `HOME` e collections Ansible corretos quando corre como root.
 
@@ -28,19 +29,23 @@ Pré-condições: `KOLLA_BIN` executável, inventory, `CONFIG_DIR` e `PASSWORDS_
 
 ## Funções
 
-### `run_as_root`
+### `run_as_root` (`lib/common.sh`)
 
-Mesma estratégia que em `lab.sh`: root → sudo NOPASSWD → Docker+nsenter → sudo interativo.
+Mesma função usada pelo `lab.sh`: root → sudo NOPASSWD → Docker+nsenter → sudo interativo.
+
+### Fluxo
+
+Uma vez por execução, antes do primeiro step:
+
+1. `check_prereqs` — valida `KOLLA_BIN`, inventory, `CONFIG_DIR` e `PASSWORDS_FILE`.
+2. `ensure_py_module <módulo> <pacote>` — garante `docker` e `dbus-python` no venv via pip se o import falhar.
+3. `build_zorin_facts` — se `OS_RELEASE` for Zorin e `FORCE_UBUNTU_FACTS=true`, roda `ansible -m setup` uma vez e normaliza os facts com `lib/zorin_facts.py` (`distribution=Ubuntu`, `noble`, etc.). Todos os steps recebem o mesmo `-e @<facts_file>`.
+4. `trap cleanup EXIT` — remove os temporários de facts em qualquer saída, inclusive quando o Kolla falha.
 
 ### `run_step <step>`
 
-Executa um passo `kolla-ansible`:
-
-1. **Libvirt do host** — se `AUTO_STOP_HOST_LIBVIRT=true` e houver socket/serviço ativo, para `libvirtd` / `virtlogd` (evita conflito com Nova/libvirt em container).
-2. **Deps Python no venv** — garante `docker` e `dbus-python` via pip se o import falhar.
-3. **Facts Zorin → Ubuntu** — se `/etc/os-release` for Zorin e `FORCE_UBUNTU_FACTS=true`, gera facts Ansible normalizados (`distribution=Ubuntu`, `noble`, etc.) e passa `-e @<facts_file>`.
-4. **Comando Kolla** — `kolla-ansible <step> -i … --configdir … --passwords …`, com root via `run_as_root` e env (`PATH` do venv, `HOME`, collections).
-5. Limpa o ficheiro temporário de facts.
+1. `stop_host_libvirt` — se `AUTO_STOP_HOST_LIBVIRT=true` e houver socket/serviço ativo, para `libvirtd` / `virtlogd` (evita conflito com Nova/libvirt em container).
+2. **Comando Kolla** — `kolla-ansible <step> -i … --configdir … --passwords …`, com root via `run_as_root` e env (`PATH` do venv, `HOME`, collections). O código de saída do Kolla vira o do script.
 
 ## Ações CLI
 
