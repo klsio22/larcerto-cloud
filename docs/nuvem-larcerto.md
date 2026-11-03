@@ -91,6 +91,17 @@ se a cadeia não confere ou se o `web` serve outro). Emitir de novo com a mesma 
 `./project/lab.sh cert renew`. Trocar a CA (quebra a confiança no navegador até reimportar):
 `./project/lab.sh cert renew --new-ca`, que copia `files/pki/` antes e pede a palavra `nova-ca`.
 
+### Ver as VMs
+
+```bash
+./project/lab.sh vms
+```
+
+Mostra as VMs do projeto `larcerto` como o `devops1` (nome, status, IP privado e floating IP) e a
+linha de `ssh` de cada uma que está `ACTIVE`. Lê da API, então vale mesmo depois de um novo
+`terraform apply` trocar os floating IPs. No Horizon, como `admin`, elas ficam em Admin → Computação
+→ Instâncias (em Projeto → Instâncias não aparecem: o `admin` não é membro do `larcerto`).
+
 ### Entrar no terminal das VMs
 
 SSH com o usuário `ubuntu` e a chave do host, no floating IP de cada VM (está no inventário gerado

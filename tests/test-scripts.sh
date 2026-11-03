@@ -2249,6 +2249,9 @@ if [[ "$1 $2" == "server show" ]]; then
   name="${@: -1}"
   [[ -f "${FAKE_VMS}/${name}" ]] || exit 1
   cat "${FAKE_VMS}/${name}"
+elif [[ "$1 $2" == "server list" ]]; then
+  [[ "${FAKE_FAIL:-}" == api ]] && exit 1
+  if [[ -f "${FAKE_SERVERS:-}" ]]; then cat "${FAKE_SERVERS}"; else echo "[]"; fi
 elif [[ "$1 $2" == "server start" ]]; then
   name="$3"
   if [[ ",${FAKE_STUCK:-}," == *",${name},"* ]]; then echo ERROR >"${FAKE_VMS}/${name}"; else echo ACTIVE >"${FAKE_VMS}/${name}"; fi
@@ -2994,6 +2997,121 @@ test_docs_cert() {
   grep -q '^| `cert`' "${lab_doc}" || fail "lab.sh.md sem a linha do cert" || return 1
   grep -qF 'cert.sh' "${lab_doc}" || fail "lab.sh.md sem o modulo cert.sh" || return 1
   grep -qF 'lab.sh cert' "${readme}" || fail "README sem a linha do cert" || return 1
+}
+
+# ---------------------------------------------------------------- vms
+
+# 4 VMs fora de ordem: db SHUTOFF, ca sem floating IP.
+vms_sandbox() {
+  install_sandbox
+  export FAKE_SERVERS="${T}/servers.json"
+  cat >"${FAKE_SERVERS}" <<'EOF'
+[
+  {"Name": "web", "Status": "ACTIVE", "Networks": {"larcerto-net": ["10.11.12.13", "172.24.4.199"]}},
+  {"Name": "dns", "Status": "ACTIVE", "Networks": {"larcerto-net": ["10.11.12.10", "172.24.4.117"]}},
+  {"Name": "db", "Status": "SHUTOFF", "Networks": {"larcerto-net": ["10.11.12.12", "172.24.4.147"]}},
+  {"Name": "ca", "Status": "ACTIVE", "Networks": {"larcerto-net": ["10.11.12.11"]}}
+]
+EOF
+}
+
+test_vms_lists_sorted() {
+  vms_sandbox
+  run_lab vms
+  expect_rc 0 || return 1
+  local got
+  got="$(awk '{$1=$1};1' "${T}/out" | grep -E '^(ca|db|dns|web) ' | tr '\n' '|')"
+  [[ "${got}" == "ca ACTIVE 10.11.12.11 -|db SHUTOFF 10.11.12.12 172.24.4.147|dns ACTIVE 10.11.12.10 172.24.4.117|web ACTIVE 10.11.12.13 172.24.4.199|" ]] \
+    || fail "tabela: ${got}" || return 1
+}
+
+test_vms_ssh_only_active_with_fip() {
+  vms_sandbox
+  run_lab vms
+  expect_rc 0 || return 1
+  local got
+  got="$(grep '^ssh ' "${T}/out" | tr '\n' '|')"
+  [[ "${got}" == "ssh -i ~/.ssh/id_ed25519 ubuntu@172.24.4.117   # dns|ssh -i ~/.ssh/id_ed25519 ubuntu@172.24.4.199   # web|" ]] \
+    || fail "linhas de ssh: ${got}" || return 1
+}
+
+test_vms_needs_clouds_yaml() {
+  vms_sandbox
+  rm -f "${T}/project/cloud/secrets/clouds.yaml"
+  run_lab vms
+  expect_rc 1 || return 1
+  grep -qF './project/cloud/bootstrap.sh' "${T}/err" || fail "sem apontar o bootstrap" || return 1
+  ! grep -q '^openstack ' "${T}/log" || fail "openstack chamado sem clouds.yaml" || return 1
+}
+
+test_vms_needs_openstack_cli() {
+  vms_sandbox
+  rm -f "${VENV_PATH}/bin/openstack"
+  run_lab vms
+  expect_rc 1 || return 1
+  grep -qF 'pip install python-openstackclient' "${T}/err" || fail "sem o pip install" || return 1
+}
+
+test_vms_api_down() {
+  vms_sandbox
+  export FAKE_FAIL=api
+  run_lab vms
+  expect_rc 1 || return 1
+  grep -qF './project/lab.sh start' "${T}/err" || fail "sem apontar o lab.sh start" || return 1
+}
+
+test_vms_empty_project() {
+  vms_sandbox
+  echo '[]' >"${FAKE_SERVERS}"
+  run_lab vms
+  expect_rc 0 || return 1
+  grep -qF 'Nenhuma VM no projeto larcerto' "${T}/out" || fail "sem a mensagem de projeto vazio" || return 1
+  grep -qF 'terraform apply' "${T}/out" || fail "sem o terraform apply" || return 1
+}
+
+test_vms_rejects_args() {
+  vms_sandbox
+  run_lab vms extra
+  expect_rc 1 || return 1
+  grep -qxF 'Uso: ./project/lab.sh vms' "${T}/err" || fail "sem a linha de uso" || return 1
+  ! grep -q '^openstack ' "${T}/log" || fail "openstack chamado com argumento invalido" || return 1
+}
+
+test_vms_read_only() {
+  vms_sandbox
+  run_lab vms
+  expect_rc 0 || return 1
+  grep -q '^openstack ' "${T}/log" || fail "openstack nao foi chamado" || return 1
+  if grep '^openstack ' "${T}/log" | grep -qv '^openstack server list .* cloud=larcerto-devops1$'; then
+    fail "chamada fora de server list/devops1: $(grep '^openstack ' "${T}/log" | tr '\n' '|')" || return 1
+  fi
+  ! grep -q '^sudo' "${T}/log" || fail "vms usou sudo" || return 1
+}
+
+test_vms_no_secret() {
+  vms_sandbox
+  echo 'password: segredo-de-teste' >"${T}/project/cloud/secrets/clouds.yaml"
+  run_lab vms
+  expect_rc 0 || return 1
+  ! grep -qF 'segredo-de-teste' "${T}/out" "${T}/err" || fail "segredo na saida" || return 1
+  export FAKE_FAIL=api
+  run_lab vms
+  ! grep -qF 'segredo-de-teste' "${T}/out" "${T}/err" || fail "segredo na saida de erro" || return 1
+}
+
+test_vms_help() {
+  setup_sandbox
+  run_lab help
+  expect_rc 0 || return 1
+  grep -q '^  vms ' "${T}/out" || fail "help sem a linha do vms" || return 1
+}
+
+test_docs_vms() {
+  local guia="${PROJECT_DIR}/docs/nuvem-larcerto.md" lab_doc="${PROJECT_DIR}/docs/lab.sh.md" readme="${PROJECT_DIR}/README.md"
+  grep -q '^| `vms`' "${lab_doc}" || fail "lab.sh.md sem a linha do vms" || return 1
+  grep -qF 'vms.sh' "${lab_doc}" || fail "lab.sh.md sem o modulo vms.sh" || return 1
+  grep -qF './project/lab.sh vms' "${guia}" || fail "guia sem lab.sh vms" || return 1
+  grep -qF './project/lab.sh vms' "${readme}" || fail "README sem lab.sh vms" || return 1
 }
 
 # ---------------------------------------------------------------- runner

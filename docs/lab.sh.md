@@ -16,6 +16,7 @@ Código: [`../lab.sh`](../lab.sh). O `lab.sh` só carrega os módulos de `script
 | [`scripts/lab/ciclo.sh`](../scripts/lab/ciclo.sh) | `lab.sh` | `prep`, `status`, `start`, `stop`, `fix-horizon` |
 | [`scripts/lab/install.sh`](../scripts/lab/install.sh) | `lab.sh` | `install-app` (8 etapas, `--from`), `start-app` (religa a instalação) |
 | [`scripts/lab/cert.sh`](../scripts/lab/cert.sh) | `lab.sh` | `cert` (`status`, `renew`, `renew --new-ca`, `trust`) do certificado da LarCerto |
+| [`scripts/lab/vms.sh`](../scripts/lab/vms.sh) | `lab.sh` | `vms`: lista as VMs do projeto `larcerto` (só leitura) |
 | [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.sh) | wrapper Kolla removido | `bootstrap`, `prechecks`, `deploy`, `post-deploy`, `all`, `stop-kolla` |
 | [`scripts/kolla/zorin_facts.py`](../scripts/kolla/zorin_facts.py) | wrapper Kolla removido | facts do Zorin para o Kolla |
 
@@ -101,6 +102,7 @@ Chama `kolla_run <ação>` de [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.
 | `install-app` | `install_app` (`scripts/lab/install.sh`) | Confere os pré-requisitos (instala o Terraform se faltar) e sobe nuvem + app em 8 etapas (`--from <etapa>` continua de uma etapa); para na que falhar e mostra como continuar |
 | `start-app` | `start_app` (`scripts/lab/install.sh`) | Religa uma instalação existente: `start`, VMs `SHUTOFF`, `dns-host` e `checks`; sem `bootstrap`, Terraform ou Ansible |
 | `cert` | `cert_main` (`scripts/lab/cert.sh`) | Certificado da LarCerto. `status` (padrão): CN, SAN, validade, `openssl verify` e se o `web` serve o mesmo (exit 0; 1 se falta arquivo; 2 se a cadeia não confere, expirou ou o `web` serve outro). `renew`: `site.yml --limit ca,web -e cert_renew=true` (mesma CA). `renew --new-ca [--yes]`: pede `nova-ca`, copia `files/pki/` para `backup-<data>/` e roda com `ca_new=true`. `trust`: `certutil -A` em cada banco NSS do usuário (sem `sudo`; sai 1 se um banco falha) |
+| `vms` | `cmd_vms` (`scripts/lab/vms.sh`) | VMs do projeto `larcerto` pela API, como `devops1`: nome, status, IP privado, floating IP (o IP em `172.24.4.0/24`) e uma linha de `ssh` por VM `ACTIVE` com floating IP. Só `server list`. Sai 1 se falta `cloud/secrets/clouds.yaml`, o cliente `openstack` do venv ou a API não responde |
 | `bootstrap` | `cmd_kolla` | → `kolla_run bootstrap` |
 | `prechecks` | `cmd_kolla` | → `kolla_run prechecks` |
 | `deploy` | `cmd_kolla` | → `kolla_run deploy` + `fix-wired` + `ext-net` |

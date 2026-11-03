@@ -20,6 +20,8 @@ source "${SCRIPT_DIR}/scripts/kolla/kolla.sh"
 source "${SCRIPT_DIR}/scripts/lab/install.sh"
 # shellcheck source=scripts/lab/cert.sh
 source "${SCRIPT_DIR}/scripts/lab/cert.sh"
+# shellcheck source=scripts/lab/vms.sh
+source "${SCRIPT_DIR}/scripts/lab/vms.sh"
 
 
 usage() {
@@ -42,6 +44,7 @@ Comandos:
   install-app    Confere pre-requisitos e sobe nuvem + app em sequencia [--from <etapa>]
                  (etapas: prereqs start bootstrap terraform nuvem app dns-host checks)
   start-app      Religa uma instalacao existente (VMs SHUTOFF, dns-host, checks)
+  vms            VMs do projeto larcerto: status, IP privado, floating IP e linha de ssh (so leitura)
   cert           Certificado da LarCerto: status (padrão) | renew [--new-ca [--yes]] | trust
                  status: validade e se o web serve o mesmo certificado
                  renew: emite de novo na VM ca (mesma CA); --new-ca troca a CA com confirmação e cópia
@@ -82,6 +85,7 @@ case "${ACTION}" in
   install-app) install_app "$@" ;;
   start-app) start_app "$@" ;;
   cert) cert_main "$@" ;;
+  vms) cmd_vms "$@" ;;
   deploy|bootstrap|prechecks|post-deploy|all) cmd_kolla "${ACTION}" "$@" ;;
   stop-kolla) cmd_kolla stop "$@" ;;
   *)

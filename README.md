@@ -152,7 +152,7 @@ Atalho (bootstrap + prechecks + deploy + fix-wired no fim):
 ### 3) Testar
 
 1. Browser: **http://192.168.1.250** (Horizon) — user `admin`, senha em `kolla-config/passwords.yml` (`keystone_admin_password`)
-2. Estado rápido: `./project/lab.sh status`
+2. Estado rápido: `./project/lab.sh status` (Kolla); VMs da nuvem: `./project/lab.sh vms`
 3. OVS só: `./project/lab.sh test-ovs`
 4. Portas: [`docs/ports.md`](docs/ports.md)
 
