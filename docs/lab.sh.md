@@ -6,24 +6,37 @@ Entrypoint único do lab AIO (dummy0, OVS host, testes, stop/start, fixes e depl
 ./project/lab.sh <comando> [opções]
 ```
 
-Código: [`../lab.sh`](../lab.sh). Helpers compartilhados com o `run-kolla.sh` ficam em [`../lib/common.sh`](../lib/common.sh), carregado com `source`.
+Código: [`../lab.sh`](../lab.sh). O `lab.sh` só carrega os módulos de `scripts/` com `source`, imprime o `usage` e despacha o comando. Cada assunto fica num arquivo:
+
+| Módulo | Origem | Conteúdo |
+|--------|--------|----------|
+| [`scripts/common.sh`](../scripts/common.sh) | compartilhado | `step`, `run_as_root`, `docker_cmd`, `read_globals` |
+| [`scripts/lab/rede.sh`](../scripts/lab/rede.sh) | `lab.sh` | `dummy0`, `fix-wired`, `ext-net`, `dns-host` |
+| [`scripts/lab/ovs.sh`](../scripts/lab/ovs.sh) | `lab.sh` | `fix-ovs`, `test-ovs` e leitura das portas da `br-ex` |
+| [`scripts/lab/ciclo.sh`](../scripts/lab/ciclo.sh) | `lab.sh` | `prep`, `status`, `start`, `stop`, `fix-horizon` |
+| [`scripts/lab/install.sh`](../scripts/lab/install.sh) | `lab.sh` | `install-app` (8 etapas, `--from`), `start-app` (religa a instalação) |
+| [`scripts/lab/cert.sh`](../scripts/lab/cert.sh) | `lab.sh` | `cert` (`status`, `renew`, `renew --new-ca`, `trust`) do certificado da LarCerto |
+| [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.sh) | wrapper Kolla removido | `bootstrap`, `prechecks`, `deploy`, `post-deploy`, `all`, `stop-kolla` |
+| [`scripts/kolla/zorin_facts.py`](../scripts/kolla/zorin_facts.py) | wrapper Kolla removido | facts do Zorin para o Kolla |
+
+Os arquivos de `scripts/` só definem funções e variáveis: nada roda ao carregá-los.
 
 ## Variáveis e paths
 
 | Variável | Valor | Uso |
 |----------|-------|-----|
 | `SCRIPT_DIR` | pasta `project/` | Base dos scripts |
-| `GLOBALS_YML` | `kolla-config/globals.yml` | Lê `network_interface`, `neutron_external_interface` e `kolla_internal_vip_address` (definido em `lib/common.sh`) |
+| `GLOBALS_YML` | `kolla-config/globals.yml` | Lê `network_interface`, `neutron_external_interface` e `kolla_internal_vip_address` (definido em `scripts/common.sh`) |
 | `DOCKER` | array (`docker` ou `sudo docker`) | Preenchido por `init_docker` |
 
 ## Helpers internos
 
-### Em `lib/common.sh` (compartilhados)
+### Em `scripts/common.sh` (compartilhados)
 
 - `step <texto>` — imprime o cabeçalho de etapa `==> <texto>`.
 - `read_globals <key> <default>` — lê linha ativa `key: value` em `globals.yml` (ignora comentários); imprime o default se ausente.
 
-### `run_as_root` (`lib/common.sh`)
+### `run_as_root` (`scripts/common.sh`)
 
 Executa um comando como root, nesta ordem:
 
@@ -32,7 +45,7 @@ Executa um comando como root, nesta ordem:
 3. Docker privilegiado + `nsenter -- <cmd>` no PID 1 (grupo `docker`)
 4. `sudo` interativo (pede senha)
 
-### `init_docker` / `docker_cmd` (`lib/common.sh`)
+### `init_docker` / `docker_cmd` (`scripts/common.sh`)
 
 - `init_docker` — define `DOCKER=(docker)` ou `DOCKER=(sudo docker)`; falha se nenhum tiver acesso.
 - `docker_cmd` — chama `init_docker` e executa `"${DOCKER[@]}" "$@"`.
@@ -66,7 +79,7 @@ Imprime help CLI (`help` / `-h` / `--help`).
 
 ### `cmd_kolla`
 
-Encaminha a ação para [`run-kolla.sh`](run-kolla.sh.md). Se o Kolla falhar, o `lab.sh` sai com o mesmo código. Se a ação for `deploy`, `all` ou `post-deploy` e o Kolla terminar com sucesso, corre `cmd_fix_wired` automaticamente (NIC de gestão fora do `br-ex`); se o `fix-wired` falhar, imprime `AVISO` no stderr e sai com 0, porque o deploy deu certo.
+Chama `kolla_run <ação>` de [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.sh). Se o Kolla falhar, o `lab.sh` sai com o mesmo código. Se a ação for `deploy`, `all` ou `post-deploy` e o Kolla terminar com sucesso, corre `cmd_fix_wired` automaticamente (NIC de gestão fora do `br-ex`); se o `fix-wired` falhar, imprime `AVISO` no stderr e sai com 0, porque o deploy deu certo.
 
 ---
 
@@ -85,12 +98,15 @@ Encaminha a ação para [`run-kolla.sh`](run-kolla.sh.md). Se o Kolla falhar, o 
 | `start` | `cmd_start` | Sobe o lab já deployado: `dummy0` + `kolla-*` + `ext-net` + `fix-wired` |
 | `ext-net` | `cmd_ext_net` | IP `172.24.4.1/24` na `br-ex` + NAT/FORWARD: floating IPs alcançáveis do host (`--down` desfaz) |
 | `dns-host` | `cmd_dns_host` | Split DNS do host: só `~larcerto.com.br` na `br-ex` vai para a VM `dns` (`--down` desfaz) |
-| `bootstrap` | `cmd_kolla` | → `run-kolla.sh bootstrap` |
-| `prechecks` | `cmd_kolla` | → `run-kolla.sh prechecks` |
-| `deploy` | `cmd_kolla` | → `run-kolla.sh deploy` + `fix-wired` + `ext-net` |
-| `post-deploy` | `cmd_kolla` | → `run-kolla.sh post-deploy` + `fix-wired` + `ext-net` |
-| `all` | `cmd_kolla` | → `run-kolla.sh all` + `fix-wired` + `ext-net` |
-| `stop-kolla` | `cmd_kolla` | → `run-kolla.sh stop` |
+| `install-app` | `install_app` (`scripts/lab/install.sh`) | Confere os pré-requisitos (instala o Terraform se faltar) e sobe nuvem + app em 8 etapas (`--from <etapa>` continua de uma etapa); para na que falhar e mostra como continuar |
+| `start-app` | `start_app` (`scripts/lab/install.sh`) | Religa uma instalação existente: `start`, VMs `SHUTOFF`, `dns-host` e `checks`; sem `bootstrap`, Terraform ou Ansible |
+| `cert` | `cert_main` (`scripts/lab/cert.sh`) | Certificado da LarCerto. `status` (padrão): CN, SAN, validade, `openssl verify` e se o `web` serve o mesmo (exit 0; 1 se falta arquivo; 2 se a cadeia não confere, expirou ou o `web` serve outro). `renew`: `site.yml --limit ca,web -e cert_renew=true` (mesma CA). `renew --new-ca [--yes]`: pede `nova-ca`, copia `files/pki/` para `backup-<data>/` e roda com `ca_new=true`. `trust`: `certutil -A` em cada banco NSS do usuário (sem `sudo`; sai 1 se um banco falha) |
+| `bootstrap` | `cmd_kolla` | → `kolla_run bootstrap` |
+| `prechecks` | `cmd_kolla` | → `kolla_run prechecks` |
+| `deploy` | `cmd_kolla` | → `kolla_run deploy` + `fix-wired` + `ext-net` |
+| `post-deploy` | `cmd_kolla` | → `kolla_run post-deploy` + `fix-wired` + `ext-net` |
+| `all` | `cmd_kolla` | → `kolla_run all` + `fix-wired` + `ext-net` |
+| `stop-kolla` | `cmd_kolla` | → `kolla_run stop` |
 | `help` | `usage` | Ajuda |
 
 ### Detalhe por comando
@@ -193,9 +209,28 @@ Sobe um lab **já deployado**, sem `kolla-ansible deploy`:
 
 ---
 
+## Kolla (`scripts/kolla/kolla.sh`)
+
+Os comandos `bootstrap`, `prechecks`, `deploy`, `post-deploy`, `all` e `stop-kolla` rodam `kolla-ansible` com inventário, `kolla-config` e facts do Zorin. Variáveis de ambiente (padrões entre parênteses):
+
+| Variável | Padrão | Uso |
+|----------|--------|-----|
+| `VENV_PATH` | `$HOME/venvs/kolla` | Venv com `kolla-ansible`, `ansible` e os módulos `docker` e `dbus` |
+| `KOLLA_BIN` | `${VENV_PATH}/bin/kolla-ansible` | Executável do kolla-ansible |
+| `INVENTORY` | `project/all-in-one` | Inventário Ansible |
+| `CONFIG_DIR` | `project/kolla-config` | Pasta com `globals.yml` e demais configs |
+| `PASSWORDS_FILE` | `${CONFIG_DIR}/passwords.yml` | Senhas (nunca copiar valores para docs) |
+| `EXTRA_VARS` | vazio | Passado com `-e` ao kolla-ansible |
+| `FORCE_UBUNTU_FACTS` | `true` | Em Zorin OS, gera facts completos e ajusta distro/família |
+| `USE_TEST_IMAGES` | `true` | Adiciona `--use-test-images` no `prechecks` |
+| `AUTO_STOP_HOST_LIBVIRT` | `true` | Para o libvirt do host antes de cada etapa (conflita com o `nova_libvirt`) |
+| `OS_RELEASE` | `/etc/os-release` | Arquivo lido para detectar Zorin |
+
+Ordem das etapas: `all` = `bootstrap-servers` → `prechecks` → `deploy`; `bootstrap` = `bootstrap-servers`; os demais rodam a própria ação. Os arquivos temporários de facts são removidos ao sair do `lab.sh`, mesmo se o kolla-ansible falhar.
+
 ## Testes
 
-`bash project/tests/test-scripts.sh [teste ...]` testa `lab.sh` e `run-kolla.sh` com comandos falsos no `PATH` (nada toca o host; não rodar como root).
+`bash project/tests/test-scripts.sh [teste ...]` testa `lab.sh` e os módulos de `scripts/` com comandos falsos no `PATH` (nada toca o host; não rodar como root).
 
 ## Exemplos
 

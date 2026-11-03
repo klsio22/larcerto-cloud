@@ -17,6 +17,24 @@
   args:
     creates: "{{ easyrsa_dir }}/easyrsa"
 
+# ca_new (lab.sh cert renew --new-ca): a copia de seguranca ja foi feita pelo lab.sh, entao aqui
+# so se apaga a PKI da VM e a copia local, e o ramo "Criar CA nova" abaixo faz o resto.
+- name: Trocar a CA (ca_new=true, so pelo lab.sh cert renew --new-ca)
+  when: ca_new | default(false) | bool
+  block:
+    - name: Apagar a PKI da VM
+      ansible.builtin.file:
+        path: "{{ easyrsa_dir }}/pki"
+        state: absent
+
+    - name: Apagar a CA e o certificado salvos no host (a copia esta em files/pki/backup-<data>/)
+      ansible.builtin.file:
+        path: "{{ pki_local_dir }}/{{ item }}"
+        state: absent
+      loop: ["ca.crt", "ca.key", "{{ cert_name }}.crt", "{{ cert_name }}.key"]
+      delegate_to: localhost
+      become: false
+
 - name: Ha copia da PKI no host?
   ansible.builtin.stat:
     path: "{{ pki_local_dir }}/ca.key"
@@ -75,6 +93,27 @@
       args:
         chdir: "{{ easyrsa_dir }}"
         creates: "{{ easyrsa_dir }}/pki/ca.crt"
+
+# cert_renew (lab.sh cert renew): tira da VM o certificado, a chave e o pedido atuais e guarda em
+# pki/renewed-<data>/, para o build-server-full abaixo emitir de novo. ca.crt e ca.key ficam como estao.
+- name: Renovar o certificado do servidor (cert_renew=true, mesma CA)
+  when: cert_renew | default(false) | bool
+  block:
+    - name: Carimbo da renovacao
+      ansible.builtin.set_fact:
+        renew_stamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+
+    - name: Pasta do certificado antigo
+      ansible.builtin.file:
+        path: "{{ easyrsa_dir }}/pki/renewed-{{ renew_stamp }}"
+        state: directory
+        mode: "0700"
+
+    - name: Guardar certificado, chave e pedido antigos (so se existirem)
+      ansible.builtin.command: mv {{ easyrsa_dir }}/pki/{{ item }} {{ easyrsa_dir }}/pki/renewed-{{ renew_stamp }}/
+      args:
+        removes: "{{ easyrsa_dir }}/pki/{{ item }}"
+      loop: ["issued/{{ cert_name }}.crt", "private/{{ cert_name }}.key", "reqs/{{ cert_name }}.req"]
 
 - name: Certificado wildcard *.{{ domain }} + {{ domain }}
   ansible.builtin.command: >-

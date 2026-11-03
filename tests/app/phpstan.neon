@@ -1,0 +1,8 @@
+parameters:
+  level: 6
+  phpVersion: 80400
+  paths:
+    - ../../app/backend
+    - ../../app/public
+  ignoreErrors:
+    - identifier: missingType.iterableValue

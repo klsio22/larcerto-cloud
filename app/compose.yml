@@ -1,0 +1,50 @@
+# Local environment, independent of the cloud. Usage: see README.md.
+# This host's Docker has no bridge or iptables, so web shares db's network: they talk over
+# 127.0.0.1 and both ports are published on db.
+name: larcerto
+
+services:
+  web:
+    image: larcerto-web
+    build:
+      context: .
+      network: host             # GD libraries; run.sh builds it, Compose v5 bake refuses this
+    network_mode: "service:db"
+    environment:
+      - DB_HOST=127.0.0.1
+      - DB_NAME=larcerto
+      - DB_USER=larcerto
+      - "DB_PASSWORD=${DB_PASSWORD?defina DB_PASSWORD em project/app/.env (cp .env.example .env)}"
+    volumes:
+      - ./public:/var/www/larcerto/public:ro
+      - ./backend:/var/www/larcerto/backend:ro
+      - ./frontend/views:/var/www/larcerto/frontend/views:ro
+      - ./dev/config.php:/var/www/larcerto/config.php:ro
+      - uploads:/var/www/larcerto/storage/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:12.3
+    ports:
+      - "127.0.0.1:8088:80"     # app; host 8080 is Horizon
+      - "127.0.0.1:3307:3306"   # DBeaver; host 3306 is Kolla's MariaDB
+    environment:
+      - MARIADB_DATABASE=larcerto
+      - MARIADB_USER=larcerto
+      - "MARIADB_PASSWORD=${DB_PASSWORD?defina DB_PASSWORD em project/app/.env (cp .env.example .env)}"
+      - MARIADB_RANDOM_ROOT_PASSWORD=1
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  db_data:
+  uploads:

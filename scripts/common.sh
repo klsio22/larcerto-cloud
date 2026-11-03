@@ -1,5 +1,5 @@
-# Helpers compartilhados por lab.sh e run-kolla.sh.
-# Carregar com: source "${SCRIPT_DIR}/lib/common.sh" (SCRIPT_DIR = pasta project/).
+# Helpers compartilhados pelos modulos de scripts/ (carregados pelo lab.sh).
+# Carregar com: source "${SCRIPT_DIR}/scripts/common.sh" (SCRIPT_DIR = pasta project/).
 # shellcheck shell=bash
 
 GLOBALS_YML="${SCRIPT_DIR}/kolla-config/globals.yml"

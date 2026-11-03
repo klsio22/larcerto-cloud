@@ -7,7 +7,7 @@ Referência dos scripts shell do lab OpenStack AIO. O guia operacional (como sub
 | Script / ficheiro | Papel | Doc |
 |-------------------|-------|-----|
 | [`../lab.sh`](../lab.sh) | Entrypoint único: prep, deploy, fixes, status, stop, start | [`lab.sh.md`](lab.sh.md) |
-| [`../run-kolla.sh`](../run-kolla.sh) | Wrapper do `kolla-ansible` (inventário + `kolla-config`) | [`run-kolla.sh.md`](run-kolla.sh.md) |
+| [`../scripts/`](../scripts/) | Módulos carregados pelo `lab.sh` (`common.sh`, `lab/`, `kolla/`) | [`lab.sh.md`](lab.sh.md) |
 | [`../kolla-config/*-openrc*.sh`](../kolla-config/) | Credenciais CLI OpenStack (`source`) | [`kolla-config-scripts.md`](kolla-config-scripts.md) |
 | [`../kolla-config/clouds.yaml`](../kolla-config/clouds.yaml) | Clouds para `OS_CLOUD=…` | [`kolla-config-scripts.md`](kolla-config-scripts.md) |
 | Enunciado Trabalho 1 | REQ01–REQ24 + substitutivo REQ25 | [`enunciado-trabalho-1.md`](enunciado-trabalho-1.md) |
@@ -19,16 +19,15 @@ Referência dos scripts shell do lab OpenStack AIO. O guia operacional (como sub
 
 ```mermaid
 flowchart LR
-  labSh["lab.sh"] --> helpers["helpers internos"]
-  labSh --> cmds["comandos prep/fix/status/stop/start"]
-  labSh --> kollaFwd["deploy/bootstrap/..."]
-  kollaFwd --> runKolla["run-kolla.sh"]
-  runKolla --> kollaCfg["kolla-config/"]
-  runKolla --> openrc["*-openrc.sh / clouds.yaml"]
+  labSh["lab.sh"] --> common["scripts/common.sh"]
+  labSh --> lab["scripts/lab/ (rede, ovs, ciclo)"]
+  labSh --> kolla["scripts/kolla/kolla.sh"]
+  kolla --> kollaCfg["kolla-config/"]
+  kolla --> openrc["*-openrc.sh / clouds.yaml"]
 ```
 
 1. O aluno usa **`lab.sh`** (prep, bootstrap, deploy, status, fixes).
-2. Comandos Kolla (`bootstrap`, `prechecks`, `deploy`, `post-deploy`, `all`, `stop-kolla`) são encaminhados para **`run-kolla.sh`**.
+2. Comandos Kolla (`bootstrap`, `prechecks`, `deploy`, `post-deploy`, `all`, `stop-kolla`) são executados por **`scripts/kolla/kolla.sh`**, sempre pelo `lab.sh`.
 3. O Kolla lê **`kolla-config/`** (`globals.yml`, `passwords.yml`).
 4. Após **`post-deploy`**, o Ansible gera `*-openrc.sh` e `clouds.yaml` para a CLI OpenStack.
 

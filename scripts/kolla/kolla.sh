@@ -1,25 +1,6 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Wrapper para executar kolla-ansible com os caminhos deste projeto.
-# Uso:
-#   ./project/run-kolla.sh all
-#   ./project/run-kolla.sh bootstrap
-#   ./project/run-kolla.sh prechecks
-#   ./project/run-kolla.sh deploy
-#   ./project/run-kolla.sh post-deploy
-#   ./project/run-kolla.sh stop
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
-
-ORIGINAL_USER="${SUDO_USER:-${USER:-$(id -un)}}"
-ORIGINAL_HOME="$(getent passwd "${ORIGINAL_USER}" | cut -d: -f6)"
-ORIGINAL_HOME="${ORIGINAL_HOME:-$HOME}"
-
-VENV_PATH="${VENV_PATH:-$HOME/venvs/kolla}"
-KOLLA_BIN="${KOLLA_BIN:-${VENV_PATH}/bin/kolla-ansible}"
+# Comandos Kolla (bootstrap, prechecks, deploy, post-deploy, all, stop-kolla) via kolla-ansible.
+# Carregado pelo lab.sh; so define funcoes e variaveis. Sem o antigo wrapper na raiz.
+# shellcheck shell=bash
 
 INVENTORY="${INVENTORY:-${SCRIPT_DIR}/all-in-one}"
 CONFIG_DIR="${CONFIG_DIR:-${SCRIPT_DIR}/kolla-config}"
@@ -29,10 +10,18 @@ FORCE_UBUNTU_FACTS="${FORCE_UBUNTU_FACTS:-true}"
 USE_TEST_IMAGES="${USE_TEST_IMAGES:-true}"
 AUTO_STOP_HOST_LIBVIRT="${AUTO_STOP_HOST_LIBVIRT:-true}"
 OS_RELEASE="${OS_RELEASE:-/etc/os-release}"
+VENV_PATH="${VENV_PATH:-$HOME/venvs/kolla}"
+KOLLA_BIN="${KOLLA_BIN:-${VENV_PATH}/bin/kolla-ansible}"
 
-ACTION="${1:-all}"
+# Temporarios dos facts do Zorin; removidos em qualquer saida (inclusive falha do Kolla).
+FACTS_DIR=""
+FACTS_FILE=""
+kolla_cleanup() {
+  if [[ -n "${FACTS_DIR}" ]]; then rm -rf "${FACTS_DIR}"; fi
+  if [[ -n "${FACTS_FILE}" ]]; then rm -f "${FACTS_FILE}"; fi
+}
 
-check_prereqs() {
+kolla_check_prereqs() {
   if [[ ! -x "${KOLLA_BIN}" ]]; then
     echo "Erro: kolla-ansible nao encontrado em: ${KOLLA_BIN}" >&2
     echo "Defina VENV_PATH ou KOLLA_BIN corretamente e tente novamente." >&2
@@ -52,17 +41,8 @@ check_prereqs() {
   fi
 }
 
-# Temporarios dos facts do Zorin; removidos em qualquer saida (inclusive falha do Kolla).
-FACTS_DIR=""
-FACTS_FILE=""
-cleanup() {
-  if [[ -n "${FACTS_DIR}" ]]; then rm -rf "${FACTS_DIR}"; fi
-  if [[ -n "${FACTS_FILE}" ]]; then rm -f "${FACTS_FILE}"; fi
-}
-trap cleanup EXIT
-
 # Libvirt do host conflita com o nova_libvirt em container.
-stop_host_libvirt() {
+kolla_stop_host_libvirt() {
   if [[ "${AUTO_STOP_HOST_LIBVIRT}" != "true" ]]; then
     return 0
   fi
@@ -74,7 +54,7 @@ stop_host_libvirt() {
 }
 
 # ensure_py_module <modulo> <pacote pip>: instala no venv se o import falhar.
-ensure_py_module() {
+kolla_ensure_py_module() {
   local module="$1"
   local package="$2"
   if ! "${VENV_PATH}/bin/python3" -c "import ${module}" >/dev/null 2>&1; then
@@ -84,22 +64,22 @@ ensure_py_module() {
 
 # Zorin OS reporta facts fora do esperado pelo Kolla.
 # Geramos facts completos uma vez e apenas ajustamos os campos de distro/familia.
-build_zorin_facts() {
+kolla_build_zorin_facts() {
   if [[ "${FORCE_UBUNTU_FACTS}" != "true" ]] || ! grep -qi '^ID=zorin' "${OS_RELEASE}" 2>/dev/null; then
     return 0
   fi
   FACTS_DIR="$(mktemp -d)"
   FACTS_FILE="$(mktemp)"
   "${VENV_PATH}/bin/ansible" localhost -c local -m setup --tree "${FACTS_DIR}" >/dev/null
-  python3 "${SCRIPT_DIR}/lib/zorin_facts.py" "${FACTS_DIR}/localhost" "${FACTS_FILE}"
+  python3 "${SCRIPT_DIR}/scripts/kolla/zorin_facts.py" "${FACTS_DIR}/localhost" "${FACTS_FILE}"
 }
 
-run_step() {
+kolla_run_step() {
   local kolla_step="$1"
   echo
   step "Executando: ${kolla_step}"
 
-  stop_host_libvirt
+  kolla_stop_host_libvirt
 
   local -a cmd=(
     "${KOLLA_BIN}" "${kolla_step}"
@@ -128,22 +108,52 @@ run_step() {
     "${cmd[@]}"
 }
 
-check_prereqs
+# kolla_run <acao>: roda as etapas Kolla da acao (sem o fix-wired/ext-net, que e do cmd_kolla).
+kolla_run() {
+  local action="$1"
+  local steps=()
 
-case "${ACTION}" in
-  bootstrap) steps=(bootstrap-servers) ;;
-  prechecks|deploy|post-deploy|stop) steps=("${ACTION}") ;;
-  all) steps=(bootstrap-servers prechecks deploy) ;;
-  *)
-    echo "Uso: $0 {all|bootstrap|prechecks|deploy|post-deploy|stop}" >&2
-    exit 1
-    ;;
-esac
+  ORIGINAL_USER="${SUDO_USER:-${USER:-$(id -un)}}"
+  ORIGINAL_HOME="$(getent passwd "${ORIGINAL_USER}" | cut -d: -f6)"
+  ORIGINAL_HOME="${ORIGINAL_HOME:-$HOME}"
 
-ensure_py_module docker docker
-ensure_py_module dbus dbus-python
-build_zorin_facts
+  case "${action}" in
+    bootstrap) steps=(bootstrap-servers) ;;
+    prechecks|deploy|post-deploy|stop) steps=("${action}") ;;
+    all) steps=(bootstrap-servers prechecks deploy) ;;
+    *)
+      echo "Uso: ./project/lab.sh {all|bootstrap|prechecks|deploy|post-deploy|stop-kolla}" >&2
+      exit 1
+      ;;
+  esac
 
-for s in "${steps[@]}"; do
-  run_step "${s}"
-done
+  kolla_check_prereqs
+  trap kolla_cleanup EXIT
+  kolla_ensure_py_module docker docker
+  kolla_ensure_py_module dbus dbus-python
+  kolla_build_zorin_facts
+
+  local s
+  for s in "${steps[@]}"; do
+    kolla_run_step "${s}"
+  done
+}
+
+cmd_kolla() {
+  local action="$1"
+  # Com set -e, uma falha em kolla_run encerra o lab.sh com o mesmo codigo do kolla-ansible.
+  kolla_run "${action}"
+  # Padrao do lab AIO: apos subir a nuvem, NIC de gestao fora do br-ex.
+  case "${action}" in
+    deploy|all|post-deploy)
+      echo
+      step "Padrao do lab: cabo (network_interface) fora do br-ex"
+      if ! cmd_fix_wired; then
+        echo "AVISO: fix-wired nao confirmou IPv4 (cabo desligado?). Deploy Kolla terminou OK." >&2
+      fi
+      if ! cmd_ext_net; then
+        echo "AVISO: ext-net falhou. Deploy Kolla terminou OK; tente: ./project/lab.sh ext-net" >&2
+      fi
+      ;;
+  esac
+}

@@ -101,15 +101,15 @@ Este projeto ja inclui inventario (`project/all-in-one`) e config (`project/koll
 Para usar exatamente essa estrutura:
 
 ```bash
-./project/run-kolla.sh all
+./project/lab.sh all
 ```
 
 Ou em etapas:
 
 ```bash
-./project/run-kolla.sh bootstrap
-./project/run-kolla.sh prechecks
-./project/run-kolla.sh deploy
+./project/lab.sh bootstrap
+./project/lab.sh prechecks
+./project/lab.sh deploy
 ```
 
 ## 8) Pos-deploy e uso inicial
@@ -123,7 +123,7 @@ kolla-ansible post-deploy
 No repositorio:
 
 ```bash
-./project/run-kolla.sh post-deploy
+./project/lab.sh post-deploy
 ```
 
 Instalar cliente OpenStack:
@@ -161,6 +161,37 @@ Use apenas se voce quiser um bootstrap de demonstracao.
 - **VIP em uso**: causa falha no `prechecks`/`deploy`.
 - **Memoria insuficiente**: containers sobem e caem repetidamente.
 - **Mistura de venv e sistema**: comando instalado fora do venv gera erros de dependencia.
+- **VMs sem IP (DHCP do Neutron nao sobe)**: ver abaixo.
+
+### VMs sem IP: AppArmor bloqueando o dnsmasq do Neutron
+
+Sintomas:
+
+- o Ansible para em `Esperar SSH` com `No route to host` nos floating IPs;
+- o console da VM (`openstack console log show <vm>`) mostra a `ens3` so com `fe80::` e o cloud-init termina com `DataSourceNone` (sem IP, sem metadata, sem chave SSH);
+- o log do agente (`docker exec neutron_dhcp_agent tail /var/log/kolla/neutron/neutron-dhcp-agent.log`) repete `Failed to start DHCP process ... Timed out after 60 seconds`;
+- o conteiner `neutron_dhcp_agent_dnsmasq_qdhcp-<id>` sai com codigo 3 (erro de arquivo).
+
+Causa: o pacote `apparmor-profiles` instala `/etc/apparmor.d/usr.sbin.dnsmasq`. O perfil vale para
+qualquer `/usr/sbin/dnsmasq`, inclusive dentro do conteiner privilegiado do Kolla, e so libera os
+caminhos do dnsmasq do sistema; o dnsmasq do Neutron nao consegue ler `/etc/neutron/dnsmasq.conf`.
+O kernel pode nao registrar o bloqueio no log. E o mesmo caso do `usr.sbin.libvirtd`, que ja fica
+em `/etc/apparmor.d/disable/`.
+
+Correcao (muda o host; o dnsmasq do libvirt e do Multipass deixam de usar esse perfil):
+
+```bash
+sudo ln -s /etc/apparmor.d/usr.sbin.dnsmasq /etc/apparmor.d/disable/
+sudo apparmor_parser -R /etc/apparmor.d/usr.sbin.dnsmasq
+docker restart neutron_dhcp_agent
+openstack server reboot --hard <vm>    # como devops1, para cada VM; o cloud-init roda de novo
+```
+
+Rollback (reativa o perfil):
+
+```bash
+sudo rm /etc/apparmor.d/disable/usr.sbin.dnsmasq && sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.dnsmasq
+```
 
 ## 11) Proximos passos para o projeto
 

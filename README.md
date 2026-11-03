@@ -4,11 +4,11 @@ Labs e entrega do **Trabalho 1** (nuvem privada + app web CRUD).
 
 ## Trabalho 1 — LarCerto
 
-Passo a passo da nuvem do trabalho (rede externa, projeto, VMs, DNS, CA, HTTPS): [`docs/nuvem-larcerto.md`](docs/nuvem-larcerto.md). O CRUD ainda está pendente: [`app/README.md`](app/README.md).
+Passo a passo da nuvem do trabalho (rede externa, projeto, VMs, DNS, CA, HTTPS): [`docs/nuvem-larcerto.md`](docs/nuvem-larcerto.md). O CRUD (PHP 8.4 + MariaDB 12.3, MVC, Tailwind CSS 4.3.3, fotos dos imóveis) roda também sem a nuvem, num Docker Compose local (`bash app/run.sh setup`; o mesmo script serve na VM `web`): [`app/README.md`](app/README.md).
 
 ## Fontes
 
-1. **Videoaulas 06–10** — [`transcricoes/`](../transcricoes/) · links em [`videos/README.md`](../videos/README.md)
+1. **Videoaulas 06–10** da disciplina (Computação em Nuvem); o mapa aula → passo está em [`notes/topologia-aio.md`](notes/topologia-aio.md)
 2. **Enunciado** — [`docs/enunciado-trabalho-1.md`](docs/enunciado-trabalho-1.md) (REQ01–REQ24; substitutivo + REQ25)
 3. **OpenStack com containers** — [`docs/kolla-ansible-quickstart.md`](docs/kolla-ansible-quickstart.md)
 4. **Portas dos containers** — [`docs/ports.md`](docs/ports.md)
@@ -22,19 +22,18 @@ Não inventar passos além das aulas e do enunciado. Se faltar transcrição, av
 project/
   README.md
   lab.sh
-  run-kolla.sh
-  all-in-one                 # inventário Ansible (usado pelo run-kolla.sh)
-  lib/                       # helpers dos scripts (common.sh, zorin_facts.py)
-  tests/                     # test-scripts.sh (sem tocar no host) e cloud-checks.sh (nuvem montada)
+  all-in-one                 # inventário Ansible (usado pelo scripts/kolla/kolla.sh)
+  scripts/                   # módulos do lab: common.sh, lab/ (rede, ovs, ciclo), kolla/ (kolla.sh, zorin_facts.py)
+  tests/                     # test-scripts.sh (sem tocar no host), app-checks.sh (Compose local) e cloud-checks.sh (nuvem montada)
   cloud/bootstrap.sh         # admin: rede public, flavor, imagem, projeto larcerto, devops1
   terraform/                 # infra do projeto larcerto (4 VMs, redes, SGs, floating IPs)
   ansible/                   # configuração das VMs: dns, ca, db, web
-  app/                       # CRUD LarCerto (pendente) + logo
+  app/                       # CRUD LarCerto em MVC: backend/, frontend/, public/, sql/ + compose.yml (ambiente local)
   docs/                      # toda a documentação de apoio
     enunciado-trabalho-1.md
     kolla-ansible-quickstart.md
     ports.md
-    lab.sh.md · run-kolla.sh.md · kolla-config-scripts.md · horizon-theme-lux.md
+    lab.sh.md · kolla-config-scripts.md · horizon-theme-lux.md
   notes/
     topologia-aio.md
   kolla-config/
@@ -50,9 +49,9 @@ project/
 | Ficheiro | Para que serve |
 |----------|----------------|
 | [`README.md`](README.md) | Guia do lab: como subir a nuvem, rede AIO, troubleshooting |
-| [`docs/`](docs/README.md) | Documentação dos scripts: funções de `lab.sh`, `run-kolla.sh`, openrc/`clouds.yaml` |
+| [`docs/`](docs/README.md) | Documentação dos scripts: funções de `lab.sh` e dos módulos de `scripts/`, openrc/`clouds.yaml` |
 | [`lab.sh`](lab.sh) | Entrypoint único: `prep`, `bootstrap`/`deploy`/`post-deploy`, `status`, `stop`, `start`, `fix-ovs`, `fix-wired`, `fix-horizon`, `test-ovs` |
-| [`run-kolla.sh`](run-kolla.sh) | Wrapper do `kolla-ansible` (inventário + `kolla-config`); chamado pelo `lab.sh`. Tenta root via Docker se não houver sudo NOPASSWD |
+| [`scripts/`](scripts/) | Módulos do lab, carregados pelo `lab.sh`. Os comandos Kolla estão em `scripts/kolla/kolla.sh` (inventário + `kolla-config`); tenta root via Docker se não houver sudo NOPASSWD |
 | [`all-in-one`](all-in-one) | Inventário Ansible AIO: todos os papéis (control, network, compute…) em `localhost` |
 | [`docs/enunciado-trabalho-1.md`](docs/enunciado-trabalho-1.md) | Requisitos do Trabalho 1 (REQ01–REQ24 + substitutivo REQ25) |
 | [`docs/kolla-ansible-quickstart.md`](docs/kolla-ansible-quickstart.md) | Notas/referência do quickstart Kolla (contexto OpenStack em containers) |
@@ -78,6 +77,33 @@ Ficheiros `*-openrc.sh` e `clouds.yaml` contêm **senhas** — não partilhar; p
 
 Detalhes: [`notes/topologia-aio.md`](notes/topologia-aio.md).
 
+## Requisitos
+
+Para o `./project/lab.sh install-app` (ou o passo a passo de [`docs/nuvem-larcerto.md`](docs/nuvem-larcerto.md)):
+
+- **Terraform `>= 1.5`**: binário em `~/.local/bin/terraform`. Se faltar, o `install-app` instala a versão
+  atual (download de `releases.hashicorp.com`, SHA-256 conferido, sem `sudo`). À mão, troque `1.9.8` pela
+  versão desejada:
+
+  ```bash
+  V=1.9.8
+  mkdir -p ~/.local/bin && cd "$(mktemp -d)" && \
+    curl -fsSLO "https://releases.hashicorp.com/terraform/${V}/terraform_${V}_linux_amd64.zip" && \
+    curl -fsSLO "https://releases.hashicorp.com/terraform/${V}/terraform_${V}_SHA256SUMS" && \
+    sha256sum -c --ignore-missing terraform_${V}_SHA256SUMS && \
+    python3 -m zipfile -e "terraform_${V}_linux_amd64.zip" . && \
+    install -m 0755 terraform ~/.local/bin/terraform && ~/.local/bin/terraform version
+  ```
+- **Cliente `openstack`** no venv: `~/venvs/kolla/bin/pip install python-openstackclient`.
+- **Chave SSH**: `~/.ssh/id_ed25519.pub` (`ssh-keygen -t ed25519`, se não existir).
+- **Senha do banco**: `project/ansible/group_vars/all/secrets.yml`, copiado de `secrets.yml.example` com a
+  senha trocada (fora do git). Se a app local já foi criada (`project/app/.env` com `DB_PASSWORD`), o
+  `install-app` cria o `secrets.yml` com a mesma senha; um `secrets.yml` já editado não é mexido.
+- **Kolla deployado**: `./project/lab.sh deploy` uma vez, antes da primeira instalação.
+- **`certutil`** (opcional, só para `./project/lab.sh cert trust` confiar na CA no navegador sem abrir
+  as configurações): `sudo apt install libnss3-tools`. Detalhes em
+  [`docs/nuvem-larcerto.md`](docs/nuvem-larcerto.md#confiar-na-ca-no-navegador-sem-abrir-as-configurações).
+
 ## Como rodar (manual — aluno)
 
 Na raiz do repo (`DevOps3`).
@@ -85,10 +111,10 @@ Na raiz do repo (`DevOps3`).
 ### 0) Permissão
 
 ```bash
-chmod +x project/lab.sh project/run-kolla.sh
+chmod +x project/lab.sh
 ```
 
-`chmod` só evita “Permission denied” ao executar o ficheiro. Pedidos de **senha** vinham do **sudo**. O `lab.sh` e o `run-kolla.sh` tentam root via **Docker** (grupo `docker`) quando não há sudo NOPASSWD — bootstrap/deploy/post-deploy não devem pedir senha se o Docker funcionar.
+`chmod` só evita “Permission denied” ao executar o ficheiro. Pedidos de **senha** vinham do **sudo**. O `lab.sh` tenta root via **Docker** (grupo `docker`) quando não há sudo NOPASSWD — bootstrap/deploy/post-deploy não devem pedir senha se o Docker funcionar.
 
 ### 1) Venv
 
@@ -151,5 +177,7 @@ Atalho (bootstrap + prechecks + deploy + fix-wired no fim):
 | Cabo sem IP / “getting IP configuration” | Já corre no fim de `deploy`/`all`/`post-deploy`; se voltar: `./project/lab.sh fix-wired` |
 | Deploy falha em horizon `409 Conflict` (nome já em uso) | `./project/lab.sh fix-horizon` → `./project/lab.sh deploy` |
 | Horizon já abre no browser | Ignora o 409; usa o login |
+| Navegador não confia no HTTPS da LarCerto, ou o certificado venceu / o `web` serve outro | `./project/lab.sh cert` (ver); `./project/lab.sh cert trust` (confiar na CA); `./project/lab.sh cert renew` (emitir de novo) |
+| VMs sem IP, Ansible com `No route to host` no `Esperar SSH` | AppArmor do `dnsmasq`: correção e rollback em [docs/kolla-ansible-quickstart.md](docs/kolla-ansible-quickstart.md#vms-sem-ip-apparmor-bloqueando-o-dnsmasq-do-neutron) |
 
 Ajuda: `./project/lab.sh help`

@@ -31,12 +31,10 @@ Colocar o cabo em `neutron_external_interface` (ou no `br-ex` do OVS) derruba a 
 
 | Módulo | Foco | Passo neste lab |
 |--------|------|-----------------|
-| 06 | Implantar nuvem privada | Preparar host, `dummy0`, `run-kolla` (bootstrap → deploy) |
+| 06 | Implantar nuvem privada | Preparar host, `dummy0`, `lab.sh` Kolla (bootstrap → deploy) |
 | 07 | Projeto e instâncias via Horizon | REQ13–REQ15: projeto + VMs web/DB |
 | 08 | CLI OpenStack | Alternativa ao Horizon para imagens/flavors/instâncias |
 | 09–10 | Terraform / Ansible | Substitutivo REQ25 (depois da nuvem estável) |
-
-Transcrições: [`../../transcricoes/`](../../transcricoes/).
 
 ## Checklist pré-deploy (aluno)
 

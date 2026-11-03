@@ -1,11 +1,18 @@
 ---
-# Apache + PHP 8.1 (M05/M10) com HTTPS do certificado wildcard da CA LarCerto.
-# App: se project/app/public/ existir (S5, CRUD), ela e publicada; senao vai a
-# pagina provisoria, que mostra o logo e testa a conexao com o banco.
+# Apache + PHP 8.4 (M05/M10; PHP do ppa:ondrej/php, porque o Ubuntu 22.04 so traz o 8.1) com HTTPS do
+# certificado wildcard da CA LarCerto. App: se project/app/public/index.php existir,
+# public/, backend/ e frontend/views/ sao publicados com as mesmas configs de Apache e PHP do
+# Compose; senao vai a pagina provisoria, que testa o banco.
 
-- name: Instalar Apache e PHP
+- name: PPA ondrej/php (PHP 8.4 no Ubuntu 22.04, que so traz o 8.1)
+  ansible.builtin.apt_repository:
+    repo: ppa:ondrej/php
+    state: present
+    update_cache: true
+
+- name: Instalar Apache e PHP 8.4 com GD para as fotos (mesma versao e extensoes do Compose local)
   ansible.builtin.apt:
-    name: [apache2, libapache2-mod-php, php-mysql]
+    name: [apache2, php8.4, libapache2-mod-php8.4, php8.4-mysql, php8.4-gd]
     state: present
 
 - name: Modulos ssl e headers
@@ -35,13 +42,28 @@
     mode: "0644"
   notify: Recarregar Apache
 
-- name: Habilitar o site e desabilitar o padrao
+- name: Front controller e /uploads sem PHP (mesmo arquivo do Compose)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../app/apache/larcerto.conf"
+    dest: /etc/apache2/conf-available/larcerto.conf
+    mode: "0644"
+  notify: Recarregar Apache
+
+- name: Limites das fotos no PHP do Apache (mesmo arquivo do Compose)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../app/php/larcerto.ini"
+    dest: /etc/php/8.4/apache2/conf.d/99-larcerto.ini
+    mode: "0644"
+  notify: Recarregar Apache
+
+- name: Habilitar o site e a conf da app e desabilitar o padrao
   ansible.builtin.command: "{{ item.cmd }}"
   args:
     creates: "{{ item.creates | default(omit) }}"
     removes: "{{ item.removes | default(omit) }}"
   loop:
     - { cmd: a2ensite larcerto, creates: /etc/apache2/sites-enabled/larcerto.conf }
+    - { cmd: a2enconf larcerto, creates: /etc/apache2/conf-enabled/larcerto.conf }
     - { cmd: a2dissite 000-default, removes: /etc/apache2/sites-enabled/000-default.conf }
   notify: Recarregar Apache
 
@@ -52,7 +74,23 @@
     owner: root
     group: www-data
     mode: "0755"
-  loop: [/var/www/larcerto, /var/www/larcerto/public, /var/www/larcerto/public/assets]
+  loop:
+    - /var/www/larcerto
+    - /var/www/larcerto/public
+    - /var/www/larcerto/public/assets
+    - /var/www/larcerto/backend
+    - /var/www/larcerto/frontend
+    - /var/www/larcerto/frontend/views
+    - /var/www/larcerto/storage
+
+- name: Pasta das fotos (so o Apache grava; fora do DocumentRoot)
+  ansible.builtin.file:
+    path: /var/www/larcerto/storage/uploads
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0750"
+
 
 - name: Configuracao do banco para a app (fora do DocumentRoot)
   ansible.builtin.template:
@@ -69,13 +107,44 @@
   become: false
   register: crud_app
 
-- name: Publicar a app CRUD (S5)
+- name: Publicar a app (front controller, back-end MVC e views)
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../app/public/"
-    dest: /var/www/larcerto/public/
+    src: "{{ playbook_dir }}/../app/{{ item }}/"
+    dest: "/var/www/larcerto/{{ item }}/"
     owner: root
     group: www-data
     mode: u=rwX,g=rX,o=rX
+  loop: [public, backend, frontend/views]
+  when: crud_app.stat.exists
+
+- name: Tirar da VM os arquivos da estrutura antiga (versao anterior ao MVC)
+  ansible.builtin.file:
+    path: "/var/www/larcerto/{{ item }}"
+    state: absent
+  loop: [src, public/anunciar.php, public/editar.php, public/excluir.php, public/imovel.php, public/assets/styles.css]
+  when: crud_app.stat.exists
+
+- name: Cliente do MariaDB e PHP CLI para o run.sh (le o config.php e fala com a VM db)
+  ansible.builtin.apt:
+    name: [mariadb-client, php8.4-cli]
+    state: present
+
+- name: run.sh da app (sem o arquivo do Compose ao lado, roda no modo servidor)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../app/run.sh"
+    dest: /var/www/larcerto/run.sh
+    owner: root
+    group: root
+    mode: "0755"
+  when: crud_app.stat.exists
+
+- name: SQL da app para o run.sh (schema e semente)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../app/sql/"
+    dest: /var/www/larcerto/sql/
+    owner: root
+    group: root
+    mode: u=rwX,go=rX
   when: crud_app.stat.exists
 
 - name: Pagina provisoria (S5 pendente)
@@ -91,7 +160,7 @@
 
     - name: Logo
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../app/assets/logo.svg"
+        src: "{{ playbook_dir }}/../app/public/assets/logo.svg"
         dest: /var/www/larcerto/public/assets/logo.svg
         owner: root
         group: www-data

@@ -7,7 +7,7 @@ Fonte: Moodle Computação em Nuvem (TSI36C-EAD) — Prof. Hermano Pereira.
 
 **Objetivo:** planejar, construir e gerenciar um projeto de nuvem **local-privada** (OpenStack) para hospedar uma aplicação web CRUD; entregar **vídeo 5–7 min** (rosto + voz).
 
-Videoaulas base: módulos **06–10** em `transcricoes/` / `videos/README.md`.
+Videoaulas base: módulos **06–10** da disciplina.
 
 ---
 

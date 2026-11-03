@@ -68,6 +68,16 @@ Após criar as instâncias no OpenStack (REQ14–REQ16):
 | SSH | 22 | VMs (administração) |
 | DNS | 53 | VM/serviço DNS (REQ10, se usado) |
 
+## App local (Docker Compose, sem a nuvem)
+
+`docker compose -f project/app/compose.yml up -d` publica só em `127.0.0.1`
+([`../app/README.md`](../app/README.md)). As portas fogem das do Kolla no host (8080 Horizon, 3306 MariaDB).
+
+| Serviço | Porta no host | Container |
+|---------|--------------:|-----------|
+| App (Apache + PHP 8.4) | `127.0.0.1:8088` | `larcerto-web-1:80` (publicada pelo `db`: o `web` usa a rede dele) |
+| MariaDB 12.3 (DBeaver) | `127.0.0.1:3307` | `larcerto-db-1:3306` |
+
 ---
 
 ## Conferência rápida (manual, após deploy)

@@ -17,7 +17,7 @@ Rascunho para o aluno gravar (REQ17–REQ21). O agente não grava, não publica 
 | 4 | DevOps: recriar a infra | 70 | `terraform destroy` / `terraform apply` (cortar a espera com cronômetro na tela, sem acelerar a fala) | REQ14, REQ15, REQ25 |
 | 5 | DevOps: configurar | 60 | `ansible-playbook site.yml`: dns → ca → db → web | REQ10, REQ11, REQ16, REQ25 |
 | 6 | DNS e certificados | 40 | `dig @<dns> www.larcerto.com.br`; `openssl verify` do certificado; CA no Firefox | REQ10, REQ11 |
-| 7 | Cliente: usar a app | 60 | `https://larcerto.com.br` com cadeado; listar, anunciar, editar e excluir um imóvel (**pendente: S5, CRUD**) | REQ02, REQ04, REQ16 |
+| 7 | Cliente: usar a app | 60 | `https://larcerto.com.br` com cadeado; listar, filtrar, anunciar, editar e excluir um imóvel | REQ02, REQ04, REQ16 |
 | 8 | Cliente: HTTP → HTTPS | 20 | `http://larcerto.com.br` redireciona para HTTPS | REQ16 |
 | 9 | Encerramento (rosto) | 30 | O que foi feito, o diferencial (recriação automática) e agradecimento | REQ19 |
 

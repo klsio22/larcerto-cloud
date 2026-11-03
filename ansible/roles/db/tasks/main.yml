@@ -1,8 +1,27 @@
 ---
-# MariaDB (M05) acessivel so pela rede privada. A tabela imoveis e da S5 (CRUD, pendente):
-# aqui so o banco e o usuario da app.
+# MariaDB 12.3 (M05; repositorio oficial da MariaDB, porta 8) acessivel so pela rede privada.
+# Cria banco e usuario da app e aplica o SQL de project/app/sql/ (o mesmo do Compose local).
 
-- name: Instalar MariaDB
+- name: Pasta de chaves do apt
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Chave do repositorio da MariaDB
+  ansible.builtin.get_url:
+    url: https://mariadb.org/mariadb_release_signing_key.pgp
+    dest: /etc/apt/keyrings/mariadb-keyring.asc   # chave em ASCII: o apt so le assim com .asc
+    mode: "0644"
+
+- name: Repositorio MariaDB 12.3 (o Ubuntu 22.04 so traz a 10.6)
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/mariadb-keyring.asc] https://deb.mariadb.org/12.3/ubuntu {{ ansible_distribution_release }} main"
+    filename: mariadb
+    state: present
+    update_cache: true
+
+- name: Instalar MariaDB 12.3 (mesma versao do Compose local)
   ansible.builtin.apt:
     name: mariadb-server
     state: present
@@ -25,7 +44,7 @@
 
 - name: Banco e usuario da app (idempotente)
   ansible.builtin.command:
-    cmd: mysql --batch
+    cmd: mariadb --batch
     stdin: |
       CREATE DATABASE IF NOT EXISTS `{{ db_name }}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
       CREATE USER IF NOT EXISTS '{{ db_user }}'@'{{ db_user_host }}' IDENTIFIED BY '{{ db_password }}';
@@ -34,3 +53,21 @@
       FLUSH PRIVILEGES;
   changed_when: false
   no_log: true
+
+- name: Tabela imoveis (01-schema.sql da app; CREATE TABLE IF NOT EXISTS)
+  ansible.builtin.command:
+    cmd: mariadb --default-character-set=utf8mb4 {{ db_name }}
+    stdin: "{{ lookup('ansible.builtin.file', app_sql_dir ~ '/01-schema.sql') }}"
+  changed_when: false
+
+- name: Contar imoveis
+  ansible.builtin.command:
+    cmd: mariadb --batch --skip-column-names -e "SELECT COUNT(*) FROM imoveis" {{ db_name }}
+  register: imoveis_count
+  changed_when: false
+
+- name: Semente do MVP (02-seed.sql) so com a tabela vazia
+  ansible.builtin.command:
+    cmd: mariadb --default-character-set=utf8mb4 {{ db_name }}
+    stdin: "{{ lookup('ansible.builtin.file', app_sql_dir ~ '/02-seed.sql') }}"
+  when: imoveis_count.stdout | int == 0

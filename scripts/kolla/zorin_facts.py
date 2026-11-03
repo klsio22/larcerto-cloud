@@ -1,7 +1,7 @@
 """Normaliza facts do Ansible coletados no Zorin OS para o Kolla tratar como Ubuntu Noble.
 
 Uso: python3 zorin_facts.py <saida de `ansible -m setup --tree`>/localhost <arquivo de saida>
-Chamado por run-kolla.sh; o resultado vai para o kolla-ansible com `-e @<arquivo>`.
+Chamado por scripts/kolla/kolla.sh; o resultado vai para o kolla-ansible com `-e @<arquivo>`.
 """
 import json
 import sys

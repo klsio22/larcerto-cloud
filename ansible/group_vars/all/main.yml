@@ -13,10 +13,11 @@ private_ips:
   web: 10.11.12.13
 private_cidr: 10.11.12.0/24
 
-# Banco usado pela app (a tabela imoveis e da S5, ainda pendente)
+# Banco usado pela app; tabela e semente vem de project/app/sql/ (o mesmo SQL do Compose local)
 db_name: larcerto
 db_user: larcerto
 db_user_host: "10.11.12.%"   # so a rede privada (web)
+app_sql_dir: "{{ playbook_dir }}/../app/sql"
 
 # PKI: copia local da CA e do certificado (fora do git), restaurada a cada apply
 pki_local_dir: "{{ playbook_dir }}/files/pki"

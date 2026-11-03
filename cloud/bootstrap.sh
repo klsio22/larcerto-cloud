@@ -13,6 +13,7 @@ VENV_PATH="${VENV_PATH:-$HOME/venvs/kolla}"
 OPENSTACK="${OPENSTACK:-${VENV_PATH}/bin/openstack}"
 SECRETS_DIR="${SECRETS_DIR:-${CLOUD_DIR}/secrets}"
 IMAGE_CACHE="${IMAGE_CACHE:-$HOME/.cache/larcerto}"
+API_WAIT_TRIES="${API_WAIT_TRIES:-30}"
 
 export OS_CLIENT_CONFIG_FILE="${OS_CLIENT_CONFIG_FILE:-${PROJECT_DIR}/kolla-config/clouds.yaml}"
 export OS_CLOUD="${OS_CLOUD:-kolla-admin}"
@@ -56,10 +57,39 @@ if [[ ! -f "${OS_CLIENT_CONFIG_FILE}" ]]; then
   exit 1
 fi
 
+# Logo depois do lab.sh start, o fix-wired reconecta o cabo e o VIP some por alguns segundos.
+# Sem esperar, um "show" que falha por rede vira "nao existe" e o create bate em recurso existente.
+step "Esperando a API do OpenStack responder"
+api_ok=0
+for _ in $(seq 1 "${API_WAIT_TRIES}"); do
+  if os network list -f value -c ID >/dev/null 2>&1; then
+    api_ok=1
+    break
+  fi
+  sleep 2
+done
+if [[ "${api_ok}" -ne 1 ]]; then
+  echo "Erro: a API do OpenStack nao respondeu em $((API_WAIT_TRIES * 2))s (teste ./project/lab.sh status)" >&2
+  exit 1
+fi
+
+err_file="$(mktemp)"
+trap 'rm -f "${err_file}"' EXIT
+
+# 409 "physnet1 is in use": ja ha uma rede externa na physnet1; pula e segue com o resto.
+network_create_failed() {
+  if grep -q 'is in use' "${err_file}"; then
+    echo "    physnet1 ja tem uma rede externa: pulando a criacao de ${EXT_NET}"
+    return 0
+  fi
+  cat "${err_file}" >&2
+  return 1
+}
+
 step "Rede externa ${EXT_NET} (flat, physnet1 = br-ex)"
 if ! exists network "${EXT_NET}"; then
   os network create --external --provider-network-type flat \
-    --provider-physical-network physnet1 "${EXT_NET}" >/dev/null
+    --provider-physical-network physnet1 "${EXT_NET}" >/dev/null 2>"${err_file}" || network_create_failed
 fi
 if ! exists subnet "${EXT_SUBNET}"; then
   os subnet create --network "${EXT_NET}" --subnet-range "${EXT_CIDR}" \
