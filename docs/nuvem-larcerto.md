@@ -134,7 +134,24 @@ resolvectl query horizon.larcerto.com.br    # cloud.larcerto.com.br -> 192.168.1
 ## Recriar (demonstração / REQ25)
 
 ```bash
-cd project/terraform && terraform destroy && terraform apply
+./project/lab.sh recreate-app          # pede para digitar larcerto; --yes pula a pergunta
+```
+
+Apaga as VMs, a rede, o roteador e os floating IPs (`terraform destroy`), recria tudo
+(`terraform apply` + `ansible-playbook site.yml`), aponta o DNS do host para a VM `dns` nova e roda o
+`cloud-checks.sh`. No fim mostra `Recriado em <M>min<S>s`. O projeto `larcerto`, o `devops1` e a CA
+ficam; anúncios e fotos criados na nuvem se perdem (a semente volta). Pede root (senha do `sudo`, se
+não houver NOPASSWD nem grupo `docker`) no `start` e no `dns-host`; ver `docs/lab.sh.md`.
+
+Depois de um reboot, as VMs só nascem `ACTIVE` com o libvirt do host parado: a etapa `start` (2/8) faz
+isso. Se o `terraform` falhar com VM em `ERROR`, `./project/lab.sh vms` mostra o status.
+
+Passos manuais equivalentes:
+
+```bash
+cd project/terraform
+export OS_CLIENT_CONFIG_FILE="$PWD/../cloud/secrets/clouds.yaml" OS_CLOUD=larcerto-devops1
+terraform destroy && terraform apply
 cd ../ansible && ~/venvs/kolla/bin/ansible-playbook site.yml
 ```
 

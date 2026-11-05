@@ -161,6 +161,20 @@ cmd_start() {
     step "Nenhuma unidade kolla-* — a subir containers via Docker"
   fi
 
+  step "libvirt do host (conflita com o nova_libvirt)"
+  local libvirt_up=0
+  "${DOCKER[@]}" ps --format '{{.Names}}' | grep -qx nova_libvirt && libvirt_up=1
+  if stop_host_libvirt; then
+    # O nova_libvirt que ja rodava ficou ligado ao virtlogd do host: reinicia para ele usar o proprio.
+    if [[ "${libvirt_up}" -eq 1 ]]; then
+      "${DOCKER[@]}" restart nova_libvirt >/dev/null
+      "${DOCKER[@]}" restart nova_compute >/dev/null
+      echo "nova_libvirt e nova_compute reiniciados."
+    fi
+  elif ! host_libvirt_active; then
+    echo "libvirt do host ja parado."
+  fi
+
   step "Garantir containers Kolla Up"
   "${DOCKER[@]}" ps -aq --filter label=kolla_version | xargs -r "${DOCKER[@]}" start >/dev/null
   echo "Containers Kolla iniciados."
@@ -173,4 +187,7 @@ cmd_start() {
   echo
   step "Padrao do lab: cabo (network_interface) fora do br-ex"
   cmd_fix_wired
+
+  echo
+  wait_vip
 }

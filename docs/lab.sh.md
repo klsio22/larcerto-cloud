@@ -14,7 +14,7 @@ Código: [`../lab.sh`](../lab.sh). O `lab.sh` só carrega os módulos de `script
 | [`scripts/lab/rede.sh`](../scripts/lab/rede.sh) | `lab.sh` | `dummy0`, `fix-wired`, `ext-net`, `dns-host` |
 | [`scripts/lab/ovs.sh`](../scripts/lab/ovs.sh) | `lab.sh` | `fix-ovs`, `test-ovs` e leitura das portas da `br-ex` |
 | [`scripts/lab/ciclo.sh`](../scripts/lab/ciclo.sh) | `lab.sh` | `prep`, `status`, `start`, `stop`, `fix-horizon` |
-| [`scripts/lab/install.sh`](../scripts/lab/install.sh) | `lab.sh` | `install-app` (8 etapas, `--from`), `start-app` (religa a instalação) |
+| [`scripts/lab/install.sh`](../scripts/lab/install.sh) | `lab.sh` | `install-app` (8 etapas, `--from`), `start-app` (religa a instalação), `recreate-app` (apaga e recria a infra da app) |
 | [`scripts/lab/cert.sh`](../scripts/lab/cert.sh) | `lab.sh` | `cert` (`status`, `renew`, `renew --new-ca`, `trust`) do certificado da LarCerto |
 | [`scripts/lab/vms.sh`](../scripts/lab/vms.sh) | `lab.sh` | `vms`: lista as VMs do projeto `larcerto` (só leitura) |
 | [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.sh) | wrapper Kolla removido | `bootstrap`, `prechecks`, `deploy`, `post-deploy`, `all`, `stop-kolla` |
@@ -36,6 +36,9 @@ Os arquivos de `scripts/` só definem funções e variáveis: nada roda ao carre
 
 - `step <texto>` — imprime o cabeçalho de etapa `==> <texto>`.
 - `read_globals <key> <default>` — lê linha ativa `key: value` em `globals.yml` (ignora comentários); imprime o default se ausente.
+- `stop_host_libvirt` — se alguma unidade do libvirt do host (`libvirtd.socket`, `libvirtd`, `virtlogd.socket`, `virtlogd`) está ativa, roda `systemctl stop` nas quatro com `run_as_root` (root) e imprime `libvirt do host parado (conflita com o nova_libvirt)`. Só `stop`, nunca `disable`: o libvirt do host volta no próximo boot. Com `AUTO_STOP_HOST_LIBVIRT=false` não mexe e avisa `AVISO: libvirt do host ativo; as VMs podem nascer em ERROR`. Se o `stop` não pegar (sem root), avisa `AVISO: o libvirt do host continua ativo (o stop precisa de root)...` e o `start` não reinicia os containers. Usada pelo `start` e pelas etapas do Kolla. Para devolver o libvirt ao host: `sudo systemctl start libvirtd.socket virtlogd.socket` (enquanto ele estiver ativo, VMs novas do OpenStack nascem em `ERROR`; o próximo `lab.sh start` para de novo).
+
+  Por quê: o `nova_libvirt` compartilha o `/run` do host. Com o `virtlogd` do host ativo (ele sobe no boot), é ele quem atende o libvirt do Kolla, não acha `/var/lib/nova/instances/<id>/console.log` (que só existe no volume do container) e as VMs nascem em `ERROR` ("Exceeded maximum number of retries").
 
 ### `run_as_root` (`scripts/common.sh`)
 
@@ -101,6 +104,7 @@ Chama `kolla_run <ação>` de [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.
 | `dns-host` | `cmd_dns_host` | Split DNS do host: só `~larcerto.com.br` na `br-ex` vai para a VM `dns` (`--down` desfaz) |
 | `install-app` | `install_app` (`scripts/lab/install.sh`) | Confere os pré-requisitos (instala o Terraform se faltar) e sobe nuvem + app em 8 etapas (`--from <etapa>` continua de uma etapa); para na que falhar e mostra como continuar |
 | `start-app` | `start_app` (`scripts/lab/install.sh`) | Religa uma instalação existente: `start`, VMs `SHUTOFF`, `dns-host` e `checks`; sem `bootstrap`, Terraform ou Ansible |
+| `recreate-app` | `recreate_app` (`scripts/lab/install.sh`) | `./project/lab.sh recreate-app [--yes]`: pede para digitar `larcerto` (o `--yes` pula), depois `prereqs` → `start` → `destroy` (`terraform destroy -auto-approve` como `devops1`) → `terraform` → `nuvem` → `app` → `dns-host` → `checks`; termina com `Recriado em <M>min<S>s` (do `destroy` ao `checks`). Falhou: mostra a etapa e `install-app --from <etapa>` (ou `recreate-app`, se foi o `destroy`). Usa root no `start` (libvirt, `dummy0`, `ext-net`) e no `dns-host` (`resolvectl`), pelo `run_as_root`: sem sudo NOPASSWD e sem grupo `docker`, o `sudo` pede a senha |
 | `cert` | `cert_main` (`scripts/lab/cert.sh`) | Certificado da LarCerto. `status` (padrão): CN, SAN, validade, `openssl verify` e se o `web` serve o mesmo (exit 0; 1 se falta arquivo; 2 se a cadeia não confere, expirou ou o `web` serve outro). `renew`: `site.yml --limit ca,web -e cert_renew=true` (mesma CA). `renew --new-ca [--yes]`: pede `nova-ca`, copia `files/pki/` para `backup-<data>/` e roda com `ca_new=true`. `trust`: `certutil -A` em cada banco NSS do usuário (sem `sudo`; sai 1 se um banco falha) |
 | `vms` | `cmd_vms` (`scripts/lab/vms.sh`) | VMs do projeto `larcerto` pela API, como `devops1`: nome, status, IP privado, floating IP (o IP em `172.24.4.0/24`) e uma linha de `ssh` por VM `ACTIVE` com floating IP. Só `server list`. Sai 1 se falta `cloud/secrets/clouds.yaml`, o cliente `openstack` do venv ou a API não responde |
 | `bootstrap` | `cmd_kolla` | → `kolla_run bootstrap` |
@@ -205,9 +209,11 @@ Sobe um lab **já deployado**, sem `kolla-ansible deploy`:
 1. Falha se não houver containers com label `kolla_version` (ex.: após `stop --remove`)
 2. Recria/ativa `dummy0` (some no reboot)
 3. `systemctl enable --now` nas unidades `kolla-*`
-4. `docker start` nos containers Kolla ainda parados
-5. `cmd_ext_net` (falha vira AVISO)
-6. `cmd_fix_wired` (cabo fora do `br-ex`)
+4. `stop_host_libvirt` (root): para o libvirt do host, que volta a cada boot; se o `nova_libvirt` já estava Up, reinicia `nova_libvirt` e depois `nova_compute`
+5. `docker start` nos containers Kolla ainda parados
+6. `cmd_ext_net` (falha vira AVISO)
+7. `cmd_fix_wired` (cabo fora do `br-ex`)
+8. `wait_vip`: espera o Keystone responder em `http://<VIP>:5000/` (até `VIP_WAIT`, padrão 90 s). Reativar o cabo tira o VIP por alguns segundos (o `keepalived` devolve depois); sem essa espera, o Terraform logo em seguida falha com `no route to host`. Sem resposta no prazo: `AVISO: a API em <VIP>:5000 nao respondeu...` e o `start` sai ≠ 0
 
 ---
 
@@ -225,7 +231,7 @@ Os comandos `bootstrap`, `prechecks`, `deploy`, `post-deploy`, `all` e `stop-kol
 | `EXTRA_VARS` | vazio | Passado com `-e` ao kolla-ansible |
 | `FORCE_UBUNTU_FACTS` | `true` | Em Zorin OS, gera facts completos e ajusta distro/família |
 | `USE_TEST_IMAGES` | `true` | Adiciona `--use-test-images` no `prechecks` |
-| `AUTO_STOP_HOST_LIBVIRT` | `true` | Para o libvirt do host antes de cada etapa (conflita com o `nova_libvirt`) |
+| `AUTO_STOP_HOST_LIBVIRT` | `true` | Para o libvirt do host (`stop_host_libvirt`) antes de cada etapa do Kolla e no `start` (conflita com o `nova_libvirt`) |
 | `OS_RELEASE` | `/etc/os-release` | Arquivo lido para detectar Zorin |
 
 Ordem das etapas: `all` = `bootstrap-servers` → `prechecks` → `deploy`; `bootstrap` = `bootstrap-servers`; os demais rodam a própria ação. Os arquivos temporários de facts são removidos ao sair do `lab.sh`, mesmo se o kolla-ansible falhar.

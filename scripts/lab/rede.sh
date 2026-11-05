@@ -17,6 +17,23 @@ vip_address() {
   read_globals kolla_internal_vip_address 192.168.1.250
 }
 
+# wait_vip: espera o Keystone responder no VIP. Ao reativar o cabo, o NetworkManager tira o VIP e o
+# keepalived so o devolve alguns segundos depois; sem esperar, o Terraform logo em seguida falha
+# com "no route to host". VIP_WAIT = segundos (padrao 90).
+wait_vip() {
+  local vip t0="${SECONDS}"
+  vip="$(vip_address)"
+  step "Esperar a API da nuvem em ${vip}:5000"
+  until curl -s -o /dev/null --noproxy '*' --max-time 3 "http://${vip}:5000/"; do
+    if [[ $((SECONDS - t0)) -ge "${VIP_WAIT:-90}" ]]; then
+      echo "AVISO: a API em ${vip}:5000 nao respondeu em ${VIP_WAIT:-90}s (o VIP saiu da interface?); veja ./project/lab.sh status" >&2
+      return 1
+    fi
+    sleep 2
+  done
+  echo "API respondendo em ${vip}:5000."
+}
+
 
 cmd_dummy0() {
   local ext

@@ -29,6 +29,34 @@ run_as_root() {
 }
 
 DOCKER=()
+# libvirt do host (unidades do systemd): compartilha o /run com o nova_libvirt do Kolla e o virtlogd
+# dele atende as VMs, que nascem em ERROR (console.log inexistente). Para, sem disable: volta no boot.
+HOST_LIBVIRT_UNITS=(libvirtd.socket libvirtd virtlogd.socket virtlogd)
+
+host_libvirt_active() {
+  local unit
+  for unit in "${HOST_LIBVIRT_UNITS[@]}"; do
+    [[ "$(systemctl is-active "${unit}" 2>/dev/null || true)" == active ]] && return 0
+  done
+  return 1
+}
+
+# stop_host_libvirt: 0 = parou agora; 1 = ja estava parado, AUTO_STOP_HOST_LIBVIRT=false ou o stop falhou (avisa).
+stop_host_libvirt() {
+  host_libvirt_active || return 1
+  if [[ "${AUTO_STOP_HOST_LIBVIRT:-true}" != "true" ]]; then
+    echo "AVISO: libvirt do host ativo; as VMs podem nascer em ERROR" >&2
+    return 1
+  fi
+  run_as_root systemctl stop "${HOST_LIBVIRT_UNITS[@]}" >/dev/null 2>&1 || true
+  if host_libvirt_active; then
+    echo "AVISO: o libvirt do host continua ativo (o stop precisa de root); as VMs podem nascer em ERROR" >&2
+    return 1
+  fi
+  echo "libvirt do host parado (conflita com o nova_libvirt)"
+  return 0
+}
+
 init_docker() {
   if [[ "${#DOCKER[@]}" -gt 0 ]]; then
     return 0

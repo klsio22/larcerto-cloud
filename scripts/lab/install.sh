@@ -1,10 +1,11 @@
-# install-app e start-app: sobe a nuvem e a app numa sequencia de etapas, com retorno em caso de erro.
+# install-app, start-app e recreate-app: sobem a nuvem e a app numa sequencia de etapas, com retorno em caso de erro.
 # Carregado pelo lab.sh (SCRIPT_DIR = pasta project/). Cada etapa roda numa subshell, para o
 # exit dela nao derrubar o lab.sh e o codigo volta para quem chamou.
 # shellcheck shell=bash
 
 INSTALL_STEPS=(prereqs start bootstrap terraform nuvem app dns-host checks)
 START_APP_STEPS=(prereqs start vms dns-host checks)
+RECREATE_STEPS=(prereqs start destroy terraform nuvem app dns-host checks)
 
 CLOUDS_YAML="${SCRIPT_DIR}/cloud/secrets/clouds.yaml"
 HOSTS_INI="${SCRIPT_DIR}/ansible/inventory/hosts.ini"
@@ -98,7 +99,7 @@ secrets_from_app_env() {
 # Pre-requisitos do install-app ou do start-app.
 step_prereqs() {
   FALTAM=0
-  if [[ "${MODE}" == install ]]; then
+  if [[ "${MODE}" == install || "${MODE}" == recreate ]]; then
     if ! command -v terraform >/dev/null 2>&1; then
       if [[ ! -x "${LOCAL_BIN}/terraform" ]] && ! install_terraform; then
         falta "Terraform (>= 1.5)" "instale a mao: ver project/README.md, secao Requisitos"
@@ -112,14 +113,17 @@ step_prereqs() {
   if [[ ! -x "${OPENSTACK_BIN}" ]]; then
     falta "cliente openstack em ${OPENSTACK_BIN}" "${VENV_DIR}/bin/pip install python-openstackclient"
   fi
-  if [[ "${MODE}" == install && ! -f "${SSH_PUB}" ]]; then
+  if [[ ( "${MODE}" == install || "${MODE}" == recreate ) && ! -f "${SSH_PUB}" ]]; then
     falta "chave SSH ${SSH_PUB}" "ssh-keygen -t ed25519"
   fi
-  if [[ "${MODE}" == install ]]; then
+  if [[ "${MODE}" == install || "${MODE}" == recreate ]]; then
     if [[ ! -f "${SECRETS_YML}" ]] || grep -q 'troque-esta-senha' "${SECRETS_YML}"; then
       secrets_from_app_env || falta "senha do banco em project/ansible/group_vars/all/secrets.yml" \
         "cp project/ansible/group_vars/all/secrets.yml.example project/ansible/group_vars/all/secrets.yml (e troque a senha), ou crie a app local antes (./project/app/run.sh setup)"
     fi
+  fi
+  if [[ "${MODE}" == recreate && ! -f "${CLOUDS_YAML}" ]]; then
+    falta "cloud/secrets/clouds.yaml do devops1 (o projeto ainda nao foi criado)" "./project/lab.sh install-app"
   fi
   if [[ "${MODE}" == start && ( ! -f "${CLOUDS_YAML}" || ! -f "${HOSTS_INI}" ) ]]; then
     echo "Nao encontrei uma instalacao anterior (falta cloud/secrets/clouds.yaml ou ansible/inventory/hosts.ini)." >&2
@@ -141,6 +145,13 @@ step_start() {
 
 step_bootstrap() {
   bash "${SCRIPT_DIR}/cloud/bootstrap.sh"
+}
+
+step_destroy() {
+  cd "${SCRIPT_DIR}/terraform" || return 1
+  export OS_CLIENT_CONFIG_FILE="${CLOUDS_YAML}" OS_CLOUD=larcerto-devops1
+  "$(terraform_bin)" init
+  "$(terraform_bin)" destroy -auto-approve
 }
 
 step_terraform() {
@@ -200,9 +211,10 @@ step_vms() {
 # Dica por etapa, mostrada no bloco de falha.
 step_hint() {
   case "$1" in
-    start) echo "veja a saida do lab.sh start acima; ./project/lab.sh status mostra o estado do Kolla" ;;
+    start) echo "veja a saida do lab.sh start acima (se a API nao respondeu no VIP, espere uns segundos e continue); ./project/lab.sh status mostra o estado do Kolla" ;;
     bootstrap) echo "veja o erro do bootstrap acima; ele pula o que ja existe, entao repetir e seguro (./project/lab.sh status mostra o Kolla)" ;;
-    terraform) echo "veja o erro do terraform acima; repetir o apply e seguro: ele so cria o que falta" ;;
+    destroy) echo "veja o erro do terraform destroy acima; repetir e seguro: ele so apaga o que ainda existe" ;;
+    terraform) echo "veja o erro do terraform acima; VM em ERROR: ./project/lab.sh vms mostra o status (depois de um reboot, ./project/lab.sh start para o libvirt do host, que faz as VMs nascerem em ERROR); repetir o apply e seguro: ele so cria o que falta" ;;
     nuvem) echo "veja o erro do ansible acima para as VMs dns e ca; o playbook pode ser rodado de novo" ;;
     app) echo "veja o erro do ansible acima para as VMs db e web; o playbook pode ser rodado de novo" ;;
     dns-host) echo "./project/lab.sh dns-host precisa do ip da VM dns no inventario (ansible/inventory/hosts.ini)" ;;
@@ -223,6 +235,7 @@ run_steps() {
     if [[ "${started}" -eq 0 && "${step}" != prereqs ]]; then
       continue
     fi
+    [[ "${step}" == "${TIMER_FROM:-}" ]] && TIMER_T0="${SECONDS}"
     echo "==> [${n}/${total}] ${step}"
     # set -e dentro da subshell: um comando que falha no meio da etapa para a etapa.
     # Nao pode ficar num "||" (o bash desliga o set -e la dentro).
@@ -236,7 +249,9 @@ run_steps() {
     if [[ "${step}" == prereqs ]]; then
       return 1
     fi
-    if [[ "${mode}" == install ]]; then
+    if [[ "${mode}" == recreate && "${step}" == destroy ]]; then
+      cont="./project/lab.sh recreate-app"
+    elif [[ "${mode}" == install || "${mode}" == recreate ]]; then
       cont="./project/lab.sh install-app --from ${step}"
     else
       cont="./project/lab.sh start-app"
@@ -279,5 +294,36 @@ start_app() {
   fi
   MODE=start
   run_steps start prereqs "${START_APP_STEPS[@]}"
+  resumo_sucesso
+}
+
+# Apaga a infra da app (Terraform) e recria tudo; o projeto, o devops1 e a CA ficam.
+recreate_app() {
+  local yes=0 resposta="" s
+  case "${1:-}" in
+    "") ;;
+    --yes) yes=1 ;;
+    *) echo "Uso: ./project/lab.sh recreate-app [--yes]" >&2; return 1 ;;
+  esac
+  if [[ -n "${2:-}" ]]; then
+    echo "Uso: ./project/lab.sh recreate-app [--yes]" >&2
+    return 1
+  fi
+  if [[ "${yes}" -eq 0 ]]; then
+    echo "Isto apaga as 4 VMs do projeto larcerto (dns, ca, db, web), a rede, o roteador e os floating IPs."
+    echo "Anuncios e fotos criados na nuvem se perdem (a semente volta). O projeto, o devops1 e a CA ficam."
+    printf 'Apagar e recriar as VMs do projeto larcerto? Digite larcerto para confirmar: '
+    read -r resposta || true
+    if [[ "${resposta}" != larcerto ]]; then
+      echo "Cancelado."
+      return 1
+    fi
+  fi
+  MODE=recreate
+  TIMER_FROM=destroy
+  TIMER_T0="${SECONDS}"
+  run_steps recreate prereqs "${RECREATE_STEPS[@]}"
+  s=$((SECONDS - TIMER_T0))
+  printf 'Recriado em %dmin%02ds\n' $((s / 60)) $((s % 60))
   resumo_sucesso
 }

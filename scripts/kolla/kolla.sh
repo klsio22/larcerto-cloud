@@ -41,18 +41,6 @@ kolla_check_prereqs() {
   fi
 }
 
-# Libvirt do host conflita com o nova_libvirt em container.
-kolla_stop_host_libvirt() {
-  if [[ "${AUTO_STOP_HOST_LIBVIRT}" != "true" ]]; then
-    return 0
-  fi
-  if test -S /var/run/libvirt/libvirt-sock \
-    || [[ "$(systemctl is-active libvirtd 2>/dev/null || true)" == "active" ]] \
-    || [[ "$(systemctl is-active libvirtd.socket 2>/dev/null || true)" == "active" ]]; then
-    run_as_root systemctl stop libvirtd.socket libvirtd virtlogd.socket virtlogd >/dev/null 2>&1 || true
-  fi
-}
-
 # ensure_py_module <modulo> <pacote pip>: instala no venv se o import falhar.
 kolla_ensure_py_module() {
   local module="$1"
@@ -79,7 +67,7 @@ kolla_run_step() {
   echo
   step "Executando: ${kolla_step}"
 
-  kolla_stop_host_libvirt
+  stop_host_libvirt || true
 
   local -a cmd=(
     "${KOLLA_BIN}" "${kolla_step}"

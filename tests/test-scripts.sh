@@ -52,7 +52,7 @@ case "$1" in
       *) [[ -n "${FAKE_DOCKER_NAMES:-}" ]] && printf "%s\n" ${FAKE_DOCKER_NAMES} ;;
     esac
     exit 0 ;;
-  start) [[ "${FAKE_FAIL:-}" == start ]] && exit 7; exit 0 ;;
+  start) [[ "${FAKE_FAIL:-}" == start ]] && exit 7; [[ -n "${FAKE_SLOW_START:-}" ]] && /bin/sleep "${FAKE_SLOW_START}"; exit 0 ;;
   exec)
     if [[ "$*" == "exec openvswitch_db ovs-vsctl list-ports br-ex" && -n "${FAKE_BR_EX_PORTS:-}" ]]; then
       printf "%s\n" ${FAKE_BR_EX_PORTS}
@@ -92,7 +92,14 @@ exit 0'
   fake resolvectl 'echo "resolvectl $*" >>"$FAKE_LOG"'
   fake systemctl '
 echo "systemctl $*" >>"$FAKE_LOG"
-[[ "$1" == "is-active" ]] && { echo inactive; exit 3; }
+# libvirt do host: ativo com FAKE_LIBVIRT_ACTIVE=1 ate um stop (que nao pega com FAKE_LIBVIRT_STUCK=1)
+if [[ "$1" == "stop" && "$*" == *virt* && "${FAKE_LIBVIRT_STUCK:-0}" != 1 ]]; then
+  touch "'"${T}"'/libvirt_stopped"
+fi
+if [[ "$1" == "is-active" ]]; then
+  [[ "${FAKE_LIBVIRT_ACTIVE:-0}" == 1 && "$2" == *virt* && ! -e "'"${T}"'/libvirt_stopped" ]] && { echo active; exit 0; }
+  echo inactive; exit 3
+fi
 exit 0'
   # br-ex: existe salvo FAKE_NO_BREX=1; o IP fica em $T/brex_addr.
   fake ip '
@@ -113,7 +120,14 @@ exit 0'
 echo "nmcli $*" >>"$FAKE_LOG"
 [[ "$*" == "-t -f NAME,DEVICE connection show" ]] && echo "Cabo:enp9s0"
 exit 0'
-  fake curl 'echo "curl $*" >>"$FAKE_LOG"; echo "    HTTP 200"'
+  fake curl 'echo "curl $*" >>"$FAKE_LOG"
+# API no VIP (:5000): FAKE_VIP_FAILS=n falha as n primeiras; FAKE_VIP_DOWN=1 falha sempre
+if [[ "$*" == *":5000/"* ]]; then
+  n=$(( $(cat "'"${T}"'/curl5000" 2>/dev/null || echo 0) + 1 )); echo "$n" >"'"${T}"'/curl5000"
+  [[ "${FAKE_VIP_DOWN:-0}" == 1 || "$n" -le "${FAKE_VIP_FAILS:-0}" ]] && exit 7
+  exit 0
+fi
+echo "    HTTP 200"'
   fake sleep 'exit 0'
 
   cat >"${T}/venv/bin/kolla-ansible" <<'EOF'
@@ -2427,7 +2441,7 @@ install_sandbox() {
   [[ -n "${T:-}" && -d "${T}" ]] || { echo "sandbox nao criado" >&2; return 1; }
   export HOME="${T}/home"
   export PATH="${T}/bin:${HOME}/.local/bin:/usr/bin:/bin"
-  unset FAKE_FAIL FAKE_RC FAKE_DOWNLOAD_FAIL FAKE_SHA_BAD FAKE_STUCK START_APP_WAIT TERRAFORM_VERSION
+  unset FAKE_FAIL FAKE_RC FAKE_DOWNLOAD_FAIL FAKE_SHA_BAD FAKE_STUCK START_APP_WAIT TERRAFORM_VERSION FAKE_LIBVIRT_ACTIVE FAKE_DOCKER_NAMES FAKE_LIBVIRT_STUCK FAKE_SLOW_START FAKE_VIP_DOWN FAKE_VIP_FAILS VIP_WAIT
   export FAKE_CONTAINER_IDS="kolla1" FAKE_VMS="${T}/vms" FAKE_FIXTURES="${T}/fixtures"
   mkdir -p "${HOME}/.ssh" "${T}/project/cloud/secrets" "${T}/project/ansible/group_vars/all" \
     "${T}/project/ansible/inventory" "${T}/project/terraform" "${T}/project/tests" \
@@ -2460,6 +2474,10 @@ for a in "$@"; do
   prev="$a"; url="$a"
 done
 [[ "${FAKE_DOWNLOAD_FAIL:-}" == 1 ]] && exit 22
+if [[ "$url" == *":5000/" ]]; then
+  [[ "${FAKE_VIP_DOWN:-0}" == 1 ]] && exit 7
+  exit 0
+fi
 case "$url" in
   *checkpoint*) echo '{"current_version":"1.9.8"}' ;;
   *SHA256SUMS)
@@ -2473,6 +2491,8 @@ EOF
 echo "terraform $* cwd=$(basename "$PWD") cloud=${OS_CLOUD:-} cfg=${OS_CLIENT_CONFIG_FILE:-}" >>"$FAKE_LOG"
 [[ "$1" == version ]] && { echo "Terraform v1.9.8"; exit 0; }
 [[ "${FAKE_FAIL:-}" == terraform ]] && exit "${FAKE_RC:-7}"
+# destroy / apply: falha so no subcomando (o init da etapa destroy passa)
+[[ -n "${FAKE_FAIL:-}" && "${FAKE_FAIL}" == "$1" ]] && exit "${FAKE_RC:-7}"
 exit 0
 EOF
   cat >"${T}/venv/bin/openstack" <<'EOF'
@@ -3345,6 +3365,228 @@ test_docs_vms() {
   grep -qF 'vms.sh' "${lab_doc}" || fail "lab.sh.md sem o modulo vms.sh" || return 1
   grep -qF './project/lab.sh vms' "${guia}" || fail "guia sem lab.sh vms" || return 1
   grep -qF './project/lab.sh vms' "${readme}" || fail "README sem lab.sh vms" || return 1
+}
+
+# ---------------------------------------------------------------- libvirt do host e recreate-app
+
+# linha (numero) da primeira ocorrencia no log; vazio se nao achar
+linha_log() { grep -nxF -- "$1" "${T}/log" | head -1 | cut -d: -f1; }
+linha_log_re() { grep -nE -- "$1" "${T}/log" | head -1 | cut -d: -f1; }
+
+test_start_stops_host_libvirt() {
+  export FAKE_CONTAINER_IDS="k1" FAKE_LIBVIRT_ACTIVE=1 AUTO_STOP_HOST_LIBVIRT=true
+  run_lab start
+  expect_rc 0 || return 1
+  local parou subiu
+  parou="$(linha_log 'systemctl stop libvirtd.socket libvirtd virtlogd.socket virtlogd')"
+  subiu="$(linha_log_re '^docker start ')"
+  [[ -n "${parou}" && -n "${subiu}" && "${parou}" -lt "${subiu}" ]] || fail "nao parou o libvirt antes do docker start (${parou}/${subiu})" || return 1
+  grep -qx 'libvirt do host parado (conflita com o nova_libvirt)' "${T}/out" || fail "sem a linha do libvirt parado" || return 1
+  ! grep -qE '^systemctl (disable|mask)' "${T}/log" || fail "start desabilitou ou mascarou unidade"
+}
+
+test_start_libvirt_stop_fails() {
+  export FAKE_CONTAINER_IDS="k1" FAKE_LIBVIRT_ACTIVE=1 FAKE_LIBVIRT_STUCK=1 AUTO_STOP_HOST_LIBVIRT=true FAKE_DOCKER_NAMES="nova_libvirt"
+  run_lab start
+  expect_rc 0 || return 1
+  grep -qx 'AVISO: o libvirt do host continua ativo (o stop precisa de root); as VMs podem nascer em ERROR' "${T}/err" \
+    || fail "stop que nao pegou nao foi avisado" || return 1
+  ! grep -qx 'libvirt do host parado (conflita com o nova_libvirt)' "${T}/out" || fail "disse que parou sem parar" || return 1
+  ! grep -q '^docker restart' "${T}/log" || fail "reiniciou containers com o libvirt do host ainda ativo"
+}
+
+test_start_restarts_nova_after_libvirt() {
+  export FAKE_CONTAINER_IDS="k1" FAKE_LIBVIRT_ACTIVE=1 AUTO_STOP_HOST_LIBVIRT=true FAKE_DOCKER_NAMES="nova_compute nova_libvirt"
+  run_lab start
+  expect_rc 0 || return 1
+  local l c
+  l="$(linha_log 'docker restart nova_libvirt')"
+  c="$(linha_log 'docker restart nova_compute')"
+  [[ -n "${l}" && -n "${c}" && "${l}" -lt "${c}" ]] || fail "nao reiniciou nova_libvirt e depois nova_compute" || return 1
+  : >"${T}/log"
+  # libvirt do host ativo de novo (outro boot): so o nova_libvirt parado decide que nao ha restart
+  rm -f "${T}/libvirt_stopped"
+  export FAKE_DOCKER_NAMES="nova_compute"
+  run_lab start
+  grep -qx 'libvirt do host parado (conflita com o nova_libvirt)' "${T}/out" || fail "2a rodada nao parou o libvirt" || return 1
+  expect_rc 0 || return 1
+  ! grep -q '^docker restart' "${T}/log" || fail "reiniciou container com o nova_libvirt parado"
+}
+
+test_start_libvirt_already_stopped() {
+  export FAKE_CONTAINER_IDS="k1" FAKE_LIBVIRT_ACTIVE=0 AUTO_STOP_HOST_LIBVIRT=true FAKE_DOCKER_NAMES="nova_libvirt nova_compute"
+  run_lab start
+  expect_rc 0 || return 1
+  ! grep -qE '^systemctl stop .*(libvirt|virtlog)' "${T}/log" || fail "parou libvirt ja parado" || return 1
+  ! grep -q '^docker restart' "${T}/log" || fail "reiniciou container sem precisar" || return 1
+  grep -qx 'libvirt do host ja parado.' "${T}/out" || fail "sem a linha de libvirt ja parado"
+}
+
+test_start_libvirt_auto_stop_off() {
+  export FAKE_CONTAINER_IDS="k1" FAKE_LIBVIRT_ACTIVE=1 AUTO_STOP_HOST_LIBVIRT=false FAKE_DOCKER_NAMES="nova_libvirt"
+  run_lab start
+  expect_rc 0 || return 1
+  ! grep -qE '^systemctl stop .*(libvirt|virtlog)' "${T}/log" || fail "parou o libvirt com AUTO_STOP_HOST_LIBVIRT=false" || return 1
+  ! grep -q '^docker restart' "${T}/log" || fail "reiniciou container com AUTO_STOP_HOST_LIBVIRT=false" || return 1
+  grep -qx 'AVISO: libvirt do host ativo; as VMs podem nascer em ERROR' "${T}/err" || fail "sem o aviso"
+}
+
+test_libvirt_single_function() {
+  local s="${PROJECT_DIR}/scripts" defs
+  defs="$(grep -rn '^stop_host_libvirt()' "${s}" "${PROJECT_DIR}/lab.sh")"
+  [[ "$(grep -c . <<<"${defs}")" -eq 1 && "${defs}" == *"/scripts/common.sh:"* ]] || fail "stop_host_libvirt definida fora de common.sh ou mais de uma vez" || return 1
+  grep -q 'stop_host_libvirt' "${s}/kolla/kolla.sh" && grep -q 'stop_host_libvirt' "${s}/lab/ciclo.sh" || fail "kolla.sh ou ciclo.sh nao usam a funcao" || return 1
+  ! grep -rqE 'systemctl stop libvirtd' "${s}/kolla" "${s}/lab" "${PROJECT_DIR}/lab.sh" || fail "systemctl stop do libvirt fora da funcao" || return 1
+  ! grep -rqE 'systemctl (disable|mask).*(libvirt|virtlog)|(libvirt|virtlog).*(disable|mask)' "${s}" "${PROJECT_DIR}/lab.sh" || fail "disable/mask no libvirt" || return 1
+  # o caminho do kolla-ansible tambem para o libvirt (mesma funcao)
+  export FAKE_LIBVIRT_ACTIVE=1 AUTO_STOP_HOST_LIBVIRT=true
+  run_lab prechecks
+  grep -qx 'systemctl stop libvirtd.socket libvirtd virtlogd.socket virtlogd' "${T}/log" || fail "prechecks nao parou o libvirt" || return 1
+  ! grep -qE '^systemctl (disable|mask)' "${T}/log" || fail "prechecks desabilitou ou mascarou unidade"
+}
+
+test_recreate_confirm() {
+  install_sandbox
+  run_lab recreate-app <<<"nao"
+  expect_rc 1 || return 1
+  grep -qE '(^|confirmar: )Cancelado\.$' "${T}/out" || fail "sem Cancelado." || return 1
+  grep -q 'Digite larcerto para confirmar' "${T}/out" || fail "sem a pergunta" || return 1
+  ! grep -q '^terraform' "${T}/log" || fail "chamou terraform sem confirmar" || return 1
+  run_lab recreate-app <<<""
+  expect_rc 1 || return 1
+  ! grep -q '^terraform' "${T}/log" || fail "chamou terraform com resposta vazia" || return 1
+  run_lab recreate-app <<<"larcerto"
+  expect_rc 0 || return 1
+  grep -q '^terraform destroy -auto-approve' "${T}/log" || fail "nao destruiu depois de confirmar"
+}
+
+test_recreate_order_8_steps() {
+  install_sandbox
+  run_lab recreate-app --yes
+  expect_rc 0 || return 1
+  local i=0 name want="" got
+  for name in prereqs start destroy terraform nuvem app dns-host checks; do
+    i=$((i + 1))
+    want+="==> [${i}/8] ${name}"$'\n'
+  done
+  got="$(grep -o '^==> \[[0-9]/8\] [a-z-]*' "${T}/out")"
+  [[ "${got}" == "${want%$'\n'}" ]] || fail "ordem das etapas diferente: ${got}" || return 1
+  ! grep -q 'Digite larcerto' "${T}/out" || fail "--yes perguntou"
+}
+
+test_recreate_destroy_args() {
+  install_sandbox
+  run_lab recreate-app --yes
+  expect_rc 0 || return 1
+  local cfg="${T}/project/cloud/secrets/clouds.yaml" ini des app
+  ini="$(linha_log "terraform init cwd=terraform cloud=larcerto-devops1 cfg=${cfg}")"
+  des="$(linha_log "terraform destroy -auto-approve cwd=terraform cloud=larcerto-devops1 cfg=${cfg}")"
+  app="$(linha_log_re '^terraform apply -auto-approve ')"
+  [[ -n "${ini}" && -n "${des}" && -n "${app}" && "${ini}" -lt "${des}" && "${des}" -lt "${app}" ]] \
+    || fail "destroy sem init/clouds.yaml/devops1 ou depois do apply (${ini}/${des}/${app})"
+}
+
+test_recreate_success_output() {
+  install_sandbox
+  # o start demora 3 s; o tempo conta so do destroy em diante, entao fica em 0min00s/0min01s
+  export FAKE_SLOW_START=3
+  run_lab recreate-app --yes
+  expect_rc 0 || return 1
+  local fim
+  fim="$(tail -3 "${T}/out")"
+  grep -qE '^Recriado em 0min0[01]s$' <<<"${fim}" || fail "linha do tempo ausente ou contando o start: ${fim}" || return 1
+  [[ "$(sed -n '2p' <<<"${fim}")" == "Pronto. Abra https://larcerto.com.br" ]] || fail "resumo fora de ordem: ${fim}"
+}
+
+test_recreate_failure_stops() {
+  local pair step idx fake code cont
+  for pair in start:2:start destroy:3:destroy terraform:4:apply nuvem:5:nuvem app:6:app dns-host:7:dns-host checks:8:checks; do
+    IFS=: read -r step idx fake <<<"${pair}"
+    install_sandbox
+    export FAKE_FAIL="${fake}" FAKE_RC=7
+    run_lab recreate-app --yes
+    code="$(sed -n 's/^FALHOU na etapa .*codigo \([0-9]*\)$/\1/p' "${T}/err")"
+    [[ -n "${code}" && "${RC}" -eq "${code}" && "${RC}" -ne 0 ]] || fail "${step}: codigo (${code}) diferente do exit (${RC})" || return 1
+    grep -q "^FALHOU na etapa ${idx}/8 (${step}), codigo" "${T}/err" || fail "${step}: bloco de falha ausente" || return 1
+    cont="./project/lab.sh install-app --from ${step}"
+    [[ "${step}" == destroy ]] && cont="./project/lab.sh recreate-app"
+    grep -qxF "Para continuar: ${cont}" "${T}/err" || fail "${step}: continuacao errada: $(grep 'Para continuar' "${T}/err")" || return 1
+    [[ "$(grep -c '^==> \[' "${T}/out")" -eq "${idx}" ]] || fail "${step}: etapa depois da falha rodou" || return 1
+    ! grep -q '^Recriado em' "${T}/out" || fail "${step}: mostrou o tempo depois de falhar" || return 1
+    if [[ "${step}" == terraform ]]; then
+      grep -q '^Dica: .*VM em ERROR.*\./project/lab\.sh vms' "${T}/err" || fail "dica do terraform sem VM em ERROR e lab.sh vms" || return 1
+    fi
+  done
+}
+
+test_recreate_needs_clouds_yaml() {
+  install_sandbox
+  rm -f "${T}/project/cloud/secrets/clouds.yaml"
+  run_lab recreate-app --yes
+  expect_rc 1 || return 1
+  grep -q '^Falta: cloud/secrets/clouds.yaml do devops1 .* -> ./project/lab.sh install-app$' "${T}/err" || fail "sem a falta do clouds.yaml" || return 1
+  ! grep -q '^terraform' "${T}/log" || fail "rodou terraform sem clouds.yaml"
+}
+
+test_start_waits_vip() {
+  export FAKE_CONTAINER_IDS="k1" FAKE_VIP_FAILS=2
+  run_lab start
+  expect_rc 0 || return 1
+  [[ "$(grep -c '^curl .*http://192.168.1.250:5000/' "${T}/log")" -eq 3 ]] || fail "nao repetiu ate a API responder" || return 1
+  local cabo api
+  cabo="$(linha_log_re '^nmcli .*(up|connection up)')"
+  api="$(linha_log_re '^curl .*:5000/')"
+  [[ -n "${api}" && ( -z "${cabo}" || "${cabo}" -lt "${api}" ) ]] || fail "esperou a API antes de reativar o cabo (${cabo}/${api})" || return 1
+  grep -qx 'API respondendo em 192.168.1.250:5000.' "${T}/out" || fail "sem a linha da API"
+}
+
+test_start_vip_timeout() {
+  export FAKE_CONTAINER_IDS="k1" FAKE_VIP_DOWN=1 VIP_WAIT=0
+  run_lab start
+  [[ "${RC}" -ne 0 ]] || fail "start saiu 0 sem a API" || return 1
+  grep -q '^AVISO: a API em 192.168.1.250:5000 nao respondeu em 0s' "${T}/err" || fail "sem o aviso da API"
+}
+
+test_recreate_waits_api_before_destroy() {
+  install_sandbox
+  export FAKE_VIP_DOWN=1 VIP_WAIT=0
+  run_lab recreate-app --yes
+  [[ "${RC}" -ne 0 ]] || fail "seguiu sem a API" || return 1
+  grep -q '^FALHOU na etapa 2/8 (start)' "${T}/err" || fail "nao parou no start" || return 1
+  grep -qxF 'Para continuar: ./project/lab.sh install-app --from start' "${T}/err" || fail "continuacao errada" || return 1
+  ! grep -q '^terraform' "${T}/log" || fail "rodou terraform sem a API" || return 1
+  install_sandbox
+  run_lab recreate-app --yes
+  expect_rc 0 || return 1
+  local api des
+  api="$(linha_log_re '^curl .*:5000/')"
+  des="$(linha_log_re '^terraform destroy')"
+  [[ -n "${api}" && -n "${des}" && "${api}" -lt "${des}" ]] || fail "destroy antes de conferir a API (${api}/${des})"
+}
+
+test_recreate_bad_args() {
+  install_sandbox
+  local a
+  for a in --bla "--yes extra" -y; do
+    : >"${T}/log"
+    # shellcheck disable=SC2086
+    run_lab recreate-app ${a}
+    expect_rc 1 || return 1
+    grep -qx 'Uso: ./project/lab.sh recreate-app \[--yes\]' "${T}/err" || fail "${a}: sem a linha de uso" || return 1
+    ! grep -q '^==> \[' "${T}/out" && ! grep -q '^terraform' "${T}/log" || fail "${a}: rodou etapa" || return 1
+  done
+  run_lab help
+  grep -q '^  recreate-app ' "${T}/out" || fail "help sem recreate-app"
+}
+
+test_docs_recreate_app() {
+  local d="${PROJECT_DIR}/docs" f
+  for f in "${d}/lab.sh.md" "${d}/nuvem-larcerto.md" "${PROJECT_DIR}/README.md" "${d}/roteiro-video.md"; do
+    grep -qF './project/lab.sh recreate-app' "${f}" || fail "$(basename "${f}") sem recreate-app" || return 1
+  done
+  grep -qF 'stop_host_libvirt` (root)' "${d}/lab.sh.md" && grep -qF 'Usa root no `start`' "${d}/lab.sh.md" \
+    && grep -qF 'sudo systemctl start libvirtd.socket virtlogd.socket' "${d}/lab.sh.md" \
+    || fail "lab.sh.md sem o passo do libvirt, o uso de root ou o rollback"
 }
 
 # ---------------------------------------------------------------- runner

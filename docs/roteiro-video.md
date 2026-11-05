@@ -14,7 +14,7 @@ Rascunho para o aluno gravar (REQ17–REQ21). O agente não grava, não publica 
 | 1 | Abertura (rosto) | 30 | Nome, disciplina, a LarCerto: aluguel verificado para estudantes em Guarapuava (ODS 11) | REQ01, REQ19 |
 | 2 | Topologia | 40 | Diagrama: host → OpenStack (Kolla AIO) → projeto `larcerto` → VMs `dns`, `ca`, `db`, `web`; rede `public` 172.24.4.0/24 e `larcerto-net` 10.11.12.0/24 | REQ09 |
 | 3 | DevOps: nuvem | 50 | `./project/lab.sh status`; Horizon em `cloud.larcerto.com.br` logado como `devops1`: projeto, rede, router, VMs | REQ12, REQ13 |
-| 4 | DevOps: recriar a infra | 70 | `terraform destroy` / `terraform apply` (cortar a espera com cronômetro na tela, sem acelerar a fala) | REQ14, REQ15, REQ25 |
+| 4 | DevOps: recriar a infra | 70 | `./project/lab.sh recreate-app --yes`: `terraform destroy` / `terraform apply` e o `Recriado em <M>min<S>s` no fim (cortar a espera com cronômetro na tela, sem acelerar a fala) | REQ14, REQ15, REQ25 |
 | 5 | DevOps: configurar | 60 | `ansible-playbook site.yml`: dns → ca → db → web | REQ10, REQ11, REQ16, REQ25 |
 | 6 | DNS e certificados | 40 | `dig @<dns> www.larcerto.com.br`; `openssl verify` do certificado; CA no Firefox | REQ10, REQ11 |
 | 7 | Cliente: usar a app | 60 | `https://larcerto.com.br` com cadeado; listar, filtrar, anunciar, editar e excluir um imóvel | REQ02, REQ04, REQ16 |

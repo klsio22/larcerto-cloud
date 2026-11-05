@@ -44,6 +44,8 @@ Comandos:
   install-app    Confere pre-requisitos e sobe nuvem + app em sequencia [--from <etapa>]
                  (etapas: prereqs start bootstrap terraform nuvem app dns-host checks)
   start-app      Religa uma instalacao existente (VMs SHUTOFF, dns-host, checks)
+  recreate-app   Apaga e recria as VMs da app e roda os checks; mostra o tempo [--yes]
+                 (etapas: prereqs start destroy terraform nuvem app dns-host checks)
   vms            VMs do projeto larcerto: status, IP privado, floating IP e linha de ssh (so leitura)
   cert           Certificado da LarCerto: status (padrão) | renew [--new-ca [--yes]] | trust
                  status: validade e se o web serve o mesmo certificado
@@ -84,6 +86,7 @@ case "${ACTION}" in
   dns-host) cmd_dns_host "$@" ;;
   install-app) install_app "$@" ;;
   start-app) start_app "$@" ;;
+  recreate-app) recreate_app "$@" ;;
   cert) cert_main "$@" ;;
   vms) cmd_vms "$@" ;;
   deploy|bootstrap|prechecks|post-deploy|all) cmd_kolla "${ACTION}" "$@" ;;

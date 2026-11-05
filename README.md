@@ -50,7 +50,7 @@ project/
 |----------|----------------|
 | [`README.md`](README.md) | Guia do lab: como subir a nuvem, rede AIO, troubleshooting |
 | [`docs/`](docs/README.md) | Documentação dos scripts: funções de `lab.sh` e dos módulos de `scripts/`, openrc/`clouds.yaml` |
-| [`lab.sh`](lab.sh) | Entrypoint único: `prep`, `bootstrap`/`deploy`/`post-deploy`, `status`, `stop`, `start`, `fix-ovs`, `fix-wired`, `fix-horizon`, `test-ovs` |
+| [`lab.sh`](lab.sh) | Entrypoint único: `prep`, `bootstrap`/`deploy`/`post-deploy`, `status`, `stop`, `start`, `fix-ovs`, `fix-wired`, `fix-horizon`, `test-ovs`, `install-app`, `start-app`, `recreate-app` |
 | [`scripts/`](scripts/) | Módulos do lab, carregados pelo `lab.sh`. Os comandos Kolla estão em `scripts/kolla/kolla.sh` (inventário + `kolla-config`); tenta root via Docker se não houver sudo NOPASSWD |
 | [`all-in-one`](all-in-one) | Inventário Ansible AIO: todos os papéis (control, network, compute…) em `localhost` |
 | [`docs/enunciado-trabalho-1.md`](docs/enunciado-trabalho-1.md) | Requisitos do Trabalho 1 (REQ01–REQ24 + substitutivo REQ25) |
@@ -152,7 +152,7 @@ Atalho (bootstrap + prechecks + deploy + fix-wired no fim):
 ### 3) Testar
 
 1. Browser: **http://192.168.1.250** (Horizon) — user `admin`, senha em `kolla-config/passwords.yml` (`keystone_admin_password`)
-2. Estado rápido: `./project/lab.sh status` (Kolla); VMs da nuvem: `./project/lab.sh vms`
+2. Estado rápido: `./project/lab.sh status` (Kolla); VMs da nuvem: `./project/lab.sh vms`; apagar e recriar a infra da app (REQ25): `./project/lab.sh recreate-app`
 3. OVS só: `./project/lab.sh test-ovs`
 4. Portas: [`docs/ports.md`](docs/ports.md)
 
