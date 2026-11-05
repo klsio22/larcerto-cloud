@@ -4,7 +4,7 @@ Labs e entrega do **Trabalho 1** (nuvem privada + app web CRUD).
 
 ## Trabalho 1 — LarCerto
 
-Passo a passo da nuvem do trabalho (rede externa, projeto, VMs, DNS, CA, HTTPS): [`docs/nuvem-larcerto.md`](docs/nuvem-larcerto.md). O CRUD (PHP 8.4 + MariaDB 12.3, MVC, Tailwind CSS 4.3.3, fotos dos imóveis) roda também sem a nuvem, num Docker Compose local (`bash app/run.sh setup`; o mesmo script serve na VM `web`): [`app/README.md`](app/README.md).
+Passo a passo da nuvem do trabalho (rede externa, projeto, VMs, DNS, CA, HTTPS): [`docs/nuvem-larcerto.md`](docs/nuvem-larcerto.md). O CRUD (PHP 8.4 + MariaDB 12.3, MVC, CSS e JavaScript próprios, fotos dos imóveis) roda também sem a nuvem, num Docker Compose local (`bash app/run.sh setup`; o mesmo script serve na VM `web`): [`app/README.md`](app/README.md).
 
 ## Fontes
 

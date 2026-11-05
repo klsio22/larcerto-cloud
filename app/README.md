@@ -1,12 +1,12 @@
 # App LarCerto — CRUD de imóveis
 
 CRUD de imóveis para alugar da LarCerto em PHP 8.4 + MariaDB 12.3, sem framework. Usa MVC próprio
-(back-end em `backend/`, telas em `frontend/`), Tailwind CSS 4.3.3 e várias fotos por imóvel. Roda
-**independente da nuvem** num Docker Compose local (o "ambiente de desenvolvimento") e depois é
+(back-end em `backend/`, telas em `frontend/`), CSS escrito à mão, slider próprio em JavaScript e várias
+fotos por imóvel. Roda **independente da nuvem** num Docker Compose local (o "ambiente de desenvolvimento") e depois é
 implantado na nuvem privada (que faz o papel do provedor) pelo Ansible, com o mesmo código e o
 mesmo SQL.
 
-Este README cobre o CRUD (Compose local e papéis Ansible `web`/`db`), o MVC com Tailwind e fotos, e o
+Este README cobre o CRUD (Compose local e papéis Ansible `web`/`db`), o MVC com CSS e fotos, e o
 `run.sh` (local e na VM). HTTPS e VMs: [`../docs/nuvem-larcerto.md`](../docs/nuvem-larcerto.md).
 
 ## Rodar local (sem a nuvem)
@@ -45,7 +45,6 @@ instalou. `LARCERTO_MODE=local|server` força o modo.
 | `db:populate` | semente só com a tabela vazia | igual |
 | `db:reset [--yes]` | apaga banco e fotos (`down -v`) e volta à semente; pede confirmação | `DROP TABLE` + schema + semente + apaga as fotos; pede confirmação |
 | `db:console` | cliente `mariadb` no banco `larcerto` | cliente `mariadb` na VM `db` |
-| `css` | gera o CSS (ver abaixo) | só no local |
 | `check [checks]` | `tests/app-checks.sh` | só no local |
 | `phpstan [args]` | PHPStan nível 6 em `backend/` e `public/` (ver Testes) | só no local |
 | `test:browser [args]` | sobe a app e roda os testes no navegador (Pest + Playwright) | só no local |
@@ -89,18 +88,14 @@ navegador. O SQL de `sql/` roda sozinho só na primeira subida do volume. Para v
 Provas do ambiente local: `bash project/tests/app-checks.sh` (sobe o Compose e apaga os dados locais;
 o que cada prova confere está nos comentários do script).
 
-## CSS (Tailwind CSS 4.3.3)
+## CSS e JavaScript (sem framework)
 
-```bash
-bash project/app/bin/build-css.sh
-```
-
-Rode depois de mexer em `frontend/` ou em `public/assets/js/`. O script:
-- baixa o binário standalone da v4.3.3 para `bin/tailwindcss` só se ele faltar (fica fora do git);
-- confere o SHA-256 com o `sha256sums.txt` da release antes de executar;
-- gera `public/assets/app.css`, que vai versionado: a VM não precisa de Node nem de internet.
-
-As cores e fontes do LarCerto ficam no `@theme` de `frontend/css/app.css`.
+- `public/assets/app.css` é CSS puro, escrito à mão e servido como está: não há build nem binário para
+  baixar. As cores e fontes do LarCerto ficam como variáveis em `:root` (`--brand`, `--accent`...).
+- As views usam classes por componente (`.card`, `.campo`, `.btn-primary`, `.slider-proxima`...);
+  toda classe usada nas views e nos scripts tem regra no `app.css`. Pontos de quebra: 640 px e 1024 px.
+- `public/assets/js/fotos.js` (prévia e redução das fotos no formulário) e
+  `public/assets/js/slider.js` (slider da página do imóvel) são JavaScript próprio, sem dependência.
 
 ## Testes (PHPStan e navegador)
 
@@ -133,12 +128,10 @@ app/
 │   ├── Models/           Imovel (validação e todo o SQL)
 │   └── Services/         FotosImovel (pasta, capa), ValidadorImagem, ProcessadorImagem (GD)
 ├── frontend/          telas sem SQL
-│   ├── views/            layout.php, imoveis/ (index, mostrar, novo, editar, _form), erros/
-│   └── css/app.css       fonte do Tailwind
-├── public/            DocumentRoot: index.php (front controller) + assets/ (app.css gerado, logo, js/fotos.js)
+│   └── views/            layout.php, imoveis/ (index, mostrar, novo, editar, _form), erros/
+├── public/            DocumentRoot: index.php (front controller) + assets/ (app.css, logo, js/fotos.js, js/slider.js)
 ├── apache/larcerto.conf   front controller e /uploads sem PHP (Compose e VM)
 ├── php/larcerto.ini       limites das fotos (Compose e VM)
-├── bin/build-css.sh       gera o CSS
 ├── sql/               01-schema.sql, 02-seed.sql (22 anúncios do MVP)
 ├── run.sh             setup, db:populate, db:reset... (local e VM web)
 ├── compose.yml, Dockerfile, .env.example, dev/config.php
@@ -185,18 +178,15 @@ desconhecida, um `{id}` que não é inteiro positivo ou um imóvel que não exis
 - **Onde ficam:** em `storage/uploads/<id>/<32 hex>.webp` + `<32 hex>_thumb.webp`, em ordem de envio. A
   tabela continua única: a coluna `capa` guarda o nome da principal. Se a capa for removida, a
   próxima vira capa. Sem foto, o card mostra o desenho do tipo.
-- **Na página do imóvel** (`frontend/views/imoveis/mostrar.php` + `public/assets/js/galeria.js`): todas as
-  fotos num slider [Swiper](https://swiperjs.com) no lugar da foto grande, a capa primeiro. Com 2 ou mais
-  fotos há setas, paginação `1 / N`, teclado (←/→) e arraste; sem JavaScript fica a capa. A capa continua
-  sendo a miniatura do card da listagem. O Swiper só é carregado na página de um imóvel com foto.
-- **Swiper 14.3.0** (MIT) fica em `public/assets/vendor/swiper/`, copiado do pacote npm `swiper@14.3.0`
-  (sem CDN). Para conferir: `curl -fsSL https://registry.npmjs.org/swiper/-/swiper-14.3.0.tgz | tar -xzO package/<arquivo> | sha256sum`.
-
-  | Arquivo | sha256 |
-  |---------|--------|
-  | `swiper-bundle.min.js` | `7ca50b195b0750f755251fcf87daca8ac30b29c6c7674b13ba1be35aa4d3d209` |
-  | `swiper-bundle.min.css` | `f4760c4ff94aef279a5418e14a35d8b1637a4fb5b47aeec94ae273fc7798dd79` |
-  | `LICENSE` | `99f08e3e3ee0799fe1488fcbcb41dc933b14873e9556693209daf9e1007601d6` |
+- **Na página do imóvel** (`frontend/views/imoveis/mostrar.php` + `public/assets/js/slider.js`): todas as
+  fotos num slider no lugar da foto grande, a capa primeiro. Com 2 ou mais fotos há setas, contador
+  `1 / N`, teclado (←/→ com o foco no slider) e arraste com mouse ou dedo (mais de 50 px), sem voltar do
+  último ao primeiro. Sem JavaScript as fotos ficam lado a lado com rolagem horizontal. A capa continua
+  sendo a miniatura do card da listagem. O `slider.js` só é carregado na página de um imóvel com foto.
+- **`slider.js`** é uma lib própria (menos de 100 linhas, sem dependência): procura os `[data-slider]` da
+  página e expõe só `window.LarCertoSlider.iniciar(el)`. A marcação é `section.slider[data-slider]` >
+  `ul.slider-trilho` > `li.slider-slide`, mais `button.slider-anterior`, `button.slider-proxima` e
+  `.slider-contador`; o estilo fica no `app.css`.
 - **Como são servidas:** pelo `Alias /uploads/` do Apache, sem PHP. Só os `.webp` com esse nome
   respondem; o resto da pasta dá 403.
 
@@ -206,7 +196,7 @@ desconhecida, um `{id}` que não é inteiro positivo ou um imóvel que não exis
 
 | Peça | Local (Compose) | Nuvem (Ansible) |
 |------|-----------------|-----------------|
-| PHP | imagem `php:8.4-apache` + `pdo_mysql`, `gd`, `exif` | `php8.4`, `libapache2-mod-php8.4`, `php8.4-mysql`, `php8.4-gd` do `ppa:ondrej/php` na VM `web` |
+| PHP | imagem `php:8.4-apache` + `pdo_mysql`, `gd`, `exif` | `php8.4`, `libapache2-mod-php8.4`, `php8.4-mysql`, `php8.4-gd` do PPA `ondrej/php` na VM `web` (chave do keyserver, fingerprint conferido) |
 | MariaDB | imagem `mariadb:12.3` | `mariadb-server` 12.3 de `deb.mariadb.org` na VM `db` |
 | Código | `public/`, `backend/`, `frontend/views/` montados em `/var/www/larcerto/` | copiados para `/var/www/larcerto/` |
 | Apache e PHP | `apache/larcerto.conf` e `php/larcerto.ini` copiados no build | os mesmos arquivos em `conf-available/` e `99-larcerto.ini` |
@@ -218,7 +208,7 @@ desconhecida, um `{id}` que não é inteiro positivo ou um imóvel que não exis
 ## Requisitos do enunciado
 
 - REQ04: só CRUD, sem módulos extras · REQ05: **uma tabela**, 10 campos
-- REQ06: PHP · REQ07: sem framework PHP (Tailwind é framework de CSS: consultar o professor)
+- REQ06: PHP · REQ07: sem framework (nem de PHP, nem de CSS, nem de JavaScript)
 - REQ08: MariaDB
 - REQ02: logo e nome LarCerto em todas as páginas (`frontend/views/layout.php`)
 
@@ -254,4 +244,4 @@ por foto, seguro-fiança.
 
 - Filtros contam como "R" do CRUD ou como módulo extra? Consultar o professor. Se forem vetados,
   saem de `Imovel::listar()` e do formulário de `frontend/views/imoveis/index.php`.
-- Tailwind (REQ07) e fotos em pasta + coluna `capa` (REQ05): confirmar com o professor.
+- Fotos em pasta + coluna `capa` (REQ05): confirmar com o professor.

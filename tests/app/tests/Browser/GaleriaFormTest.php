@@ -23,7 +23,7 @@ test('salva a capa escolhida', function () {
     $page->script("document.querySelector('#previa-fotos input[name=capa]:not(:checked)').click()");
     $page->press('Salvar alterações')->assertSee('Anúncio atualizado.');
 
-    expect($page->script("document.querySelector('[data-galeria] .swiper-slide img').getAttribute('src')"))
+    expect($page->script("document.querySelector('[data-slider] .slider-slide img').getAttribute('src')"))
         ->toContain('/uploads/' . $id . '/' . substr($outra, 2) . '.webp');
 
     excluir($page);
@@ -35,13 +35,13 @@ test('remover foto salva marca e desfaz', function () {
     $page->script(galeriaJs() . ".querySelector('input[name=\"remover[]\"]').click()");
 
     $page->assertSee('Será removida ao salvar')
-        ->assertScript(galeriaJs() . ".classList.contains('opacity-50')", true)
+        ->assertScript(galeriaJs() . ".classList.contains('foto-removida')", true)
         ->assertScript(galeriaJs() . ".querySelector('[data-texto-remover]').textContent", 'Desfazer');
 
     $page->script(galeriaJs() . ".querySelector('input[name=\"remover[]\"]').click()");
 
     $page->assertDontSee('Será removida ao salvar')
-        ->assertScript(galeriaJs() . ".classList.contains('opacity-50')", false)
+        ->assertScript(galeriaJs() . ".classList.contains('foto-removida')", false)
         ->assertScript(galeriaJs() . ".querySelector('[data-texto-remover]').textContent", 'Remover');
 
     excluir(visit(url("/imoveis/{$id}")));
@@ -60,7 +60,7 @@ test('remover a capa promove a primeira da galeria', function () {
         ->assertScript("document.querySelector('#previa-fotos > figure input[name=\"remover[]\"]').checked", false)
         ->assertScript("document.querySelectorAll('#previa-fotos input[name=capa]:checked').length", 1);
 
-    $page->press('Salvar alterações')->assertSee('Anúncio atualizado.')->assertCount('.swiper-slide', 2);
+    $page->press('Salvar alterações')->assertSee('Anúncio atualizado.')->assertCount('.slider-slide', 2);
     expect($page->script('document.documentElement.outerHTML.includes(' . json_encode($removida) . ')'))->toBeFalse();
 
     excluir($page);
@@ -71,7 +71,7 @@ test('salvar remove foto marcada', function () {
     $page = visit(url("/imoveis/{$id}/editar"));
     $removida = $page->script(galeriaJs() . ".querySelector('input[name=\"remover[]\"]').value");
     $page->script(galeriaJs() . ".querySelector('input[name=\"remover[]\"]').click()");
-    $page->press('Salvar alterações')->assertSee('Anúncio atualizado.')->assertCount('.swiper-slide', 1);
+    $page->press('Salvar alterações')->assertSee('Anúncio atualizado.')->assertCount('.slider-slide', 1);
     expect($page->script('document.documentElement.outerHTML.includes(' . json_encode($removida) . ')'))->toBeFalse();
 
     excluir($page);

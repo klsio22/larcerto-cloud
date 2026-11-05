@@ -1121,80 +1121,162 @@ test_app_documented() {
     grep -qF "\`${rota}\`" "${r}" || fail "README sem a rota ${rota}" || return 1
   done
   grep -q '├── backend/' "${r}" && grep -q '├── frontend/' "${r}" && grep -q '├── public/' "${r}" || fail "README sem a estrutura" || return 1
-  grep -q 'bash project/app/bin/build-css.sh' "${r}" || fail "README sem o build do CSS" || return 1
   grep -q '10 fotos' "${r}" && grep -q '20 MB' "${r}" && grep -q '40 MP' "${r}" || fail "README sem os limites das fotos" || return 1
   grep -q 'docker compose -f project/app/compose.yml up' "${r}" || fail "README sem o Compose" || return 1
   grep -q '127.0.0.1:8088' "${r}" && grep -q '127.0.0.1:3307' "${r}" || fail "README sem as portas locais" || return 1
   ! grep -qiE 'CRUD.*pendente|pendente.*CRUD' "${PROJECT_DIR}/../TASKS.md" || fail "TASKS.md ainda marca o CRUD pendente"
 }
 
-# ---------------------------------------------------------------- app: Tailwind
+# ---------------------------------------------------------------- app: CSS sem framework
 
-test_tailwind_layout() {
-  local l="${APP}/frontend/views/layout.php"
-  grep -q '<link rel="stylesheet" href="/assets/app.css">' "${l}" || fail "layout sem /assets/app.css" || return 1
-  ! grep -rqE 'cdn\.tailwindcss\.com|@tailwindcss/browser|styles\.css' "${APP}/frontend" "${APP}/public" "${APP}/backend" \
-    || fail "Tailwind por CDN ou styles.css" || return 1
-  [[ "$(grep -c 'rel="stylesheet"' "${l}")" -eq 2 ]] || fail "layout com outro CSS alem de app.css e da fonte" || return 1
-  head -c 64 "${APP}/public/assets/app.css" | grep -q '^/\*! tailwindcss v4\.3\.3 ' || fail "app.css nao e do Tailwind 4.3.3" || return 1
-  local src="${APP}/frontend/css/app.css"
-  grep -qx '@import "tailwindcss" source(none);' "${src}" && grep -qx '@source "../views";' "${src}" \
-    && grep -qx '@source "../../public/assets/js";' "${src}" || fail "app.css de origem sem import/@source" || return 1
-  git -C "${PROJECT_DIR}/.." check-ignore -q project/app/bin/tailwindcss || fail "binario do Tailwind nao e ignorado"
+# pw_run: roda o script Python da entrada padrao com o Playwright do .venv. O script ja recebe
+# `browser` aberto, `BASE` e `fotos_reais(pasta)` (troca os .webp falsos do harness por imagens reais).
+pw_run() {
+  local py="${PROJECT_DIR}/../.venv/bin/python"
+  [[ -x "${py}" ]] && "${py}" -c 'import playwright' 2>/dev/null || fail "Playwright do .venv ausente" || return 1
+  cat >"${T}/pw_body.py"
+  "${py}" - "${T}/pw_body.py" <<'PY'
+import base64, glob, os, sys
+from playwright.sync_api import Error, sync_playwright
+
+with sync_playwright() as p:
+    try:
+        browser = p.chromium.launch()
+    except Error:
+        cache = sorted(glob.glob(os.path.expanduser("~/.cache/ms-playwright/chromium-*/chrome-linux*/chrome")))
+        assert cache, "nenhum Chromium do Playwright no cache"
+        browser = p.chromium.launch(executable_path=cache[-1])
+
+    def fotos_reais(pasta):
+        pg = browser.new_page()
+        for i, f in enumerate(sorted(glob.glob(pasta + "/*.webp"))):
+            b64 = pg.evaluate("""(i) => { const c = document.createElement('canvas'); c.width = 400; c.height = 300;
+                const g = c.getContext('2d'); g.fillStyle = `hsl(${i * 70} 60% 45%)`; g.fillRect(0, 0, 400, 300);
+                return c.toDataURL('image/webp').split(',')[1]; }""", i)
+            open(f, "wb").write(base64.b64decode(b64))
+        pg.close()
+
+    try:
+        exec(compile(open(sys.argv[1]).read(), "teste", "exec"),
+             {"browser": browser, "p": p, "BASE": os.environ.get("BASE"), "os": os, "fotos_reais": fotos_reais})
+    finally:
+        browser.close()
+PY
 }
 
-test_tailwind_build_checksum() {
-  local a="${T}/app"
-  mkdir -p "${a}/bin" "${a}/frontend/css" "${a}/public/assets" "${T}/srv"
-  cp "${APP}/bin/build-css.sh" "${a}/bin/"
-  echo '@import "tailwindcss";' >"${a}/frontend/css/app.css"
-  # binario falso: marca que rodou e escreve o --output
-  cat >"${T}/srv/tailwindcss-linux-x64" <<EOF
-#!/usr/bin/env bash
-echo ran >>"${T}/ran"
-while [[ \$# -gt 0 ]]; do [[ "\$1" == --output ]] && echo '/*! tailwindcss v4.3.3 */' >"\$2"; shift; done
-EOF
-  local fake_sha
-  fake_sha="$(sha256sum "${T}/srv/tailwindcss-linux-x64" | cut -d' ' -f1)"
-  printf '%s  ./tailwindcss-linux-x64\n' "${fake_sha}" >"${T}/srv/sha256sums.txt"
-  fake curl 'echo "curl $*" >>"$FAKE_LOG"
-out=""; url=""
-while [[ $# -gt 0 ]]; do case "$1" in -o) out="$2"; shift ;; http*) url="$1" ;; esac; shift; done
-cp "'"${T}"'/srv/${url##*/}" "${out}"'
-  local real_sha
-  real_sha="$(sed -n 's/^SHA256=//p' "${a}/bin/build-css.sh")"
-  [[ "${real_sha}" =~ ^[0-9a-f]{64}$ ]] || fail "SHA256 fixado ausente" || return 1
-  grep -qx 'TAILWIND_VERSION=4.3.3' "${a}/bin/build-css.sh" && grep -qx 'ASSET=tailwindcss-linux-x64' "${a}/bin/build-css.sh" \
-    || fail "versao/asset fora do plano" || return 1
+test_css_sem_framework() {
+  local f pat="tail""wind" achou
+  for f in frontend/css bin/build-css.sh bin; do
+    [[ ! -e "${APP}/${f}" ]] || fail "sobrou ${f}" || return 1
+  done
+  "${APP}/run.sh" css >/dev/null 2>"${T}/err"
+  [[ $? -eq 2 ]] || fail "run.sh css nao sai 2" || return 1
+  ! grep -qE '^  css ' "${T}/err" || fail "ajuda do run.sh ainda lista o css" || return 1
+  achou="$(grep -rliI "${pat}" "${APP}" "${PROJECT_DIR}/ansible" "${PROJECT_DIR}/tests" \
+    --exclude-dir=node_modules --exclude-dir=vendor --exclude=composer.lock)"
+  [[ -z "${achou}" ]] || fail "ainda cita ${pat}:" "${achou}"
+}
 
-  # 1) binario real != do servidor: sai com erro e nada roda
-  FAKE_LOG="${T}/log" bash "${a}/bin/build-css.sh" >"${T}/out" 2>"${T}/err" && { fail "aceitou binario com SHA diferente"; return 1; }
-  [[ ! -e "${T}/ran" && ! -e "${a}/bin/tailwindcss" ]] || fail "rodou/instalou binario com SHA diferente" || return 1
-  # 2) sha256sums.txt da release discorda do fixado: erro e nada roda
-  sed -i "s/^SHA256=.*/SHA256=${fake_sha}/" "${a}/bin/build-css.sh"
-  printf '%064d  ./tailwindcss-linux-x64\n' 0 >"${T}/srv/sha256sums.txt"
-  FAKE_LOG="${T}/log" bash "${a}/bin/build-css.sh" >"${T}/out" 2>"${T}/err" && { fail "aceitou sha256sums.txt divergente"; return 1; }
-  [[ ! -e "${T}/ran" && ! -e "${a}/bin/tailwindcss" ]] || fail "rodou com sha256sums.txt divergente" || return 1
-  # 3) sha256sums.txt e fixado concordam, mas o binario baixado e outro: erro, nada roda nem fica instalado
-  printf '%s  ./tailwindcss-linux-x64\n' "${fake_sha}" >"${T}/srv/sha256sums.txt"
-  cp "${T}/srv/tailwindcss-linux-x64" "${T}/srv/bom"
-  echo '# adulterado no caminho' >>"${T}/srv/tailwindcss-linux-x64"
-  FAKE_LOG="${T}/log" bash "${a}/bin/build-css.sh" >"${T}/out" 2>"${T}/err" && { fail "aceitou binario baixado adulterado"; return 1; }
-  [[ ! -e "${T}/ran" && ! -e "${a}/bin/tailwindcss" ]] && ! ls "${a}/bin/.tailwindcss."* >/dev/null 2>&1 \
-    || fail "binario baixado adulterado rodou, ficou instalado ou deixou temporario" || return 1
-  mv "${T}/srv/bom" "${T}/srv/tailwindcss-linux-x64"
-  # 4) tudo confere: baixa binario + sums, roda e gera o CSS
-  : >"${T}/log"
-  FAKE_LOG="${T}/log" bash "${a}/bin/build-css.sh" >"${T}/out" 2>"${T}/err" || { fail "build valido falhou"; return 1; }
-  [[ "$(grep -c '^curl ' "${T}/log")" -eq 2 && -x "${a}/bin/tailwindcss" && -s "${a}/public/assets/app.css" ]] \
-    && [[ "$(wc -l <"${T}/ran")" -eq 1 ]] || fail "build valido nao baixou/rodou" || return 1
-  # 5) binario presente e valido: nao baixa de novo
-  FAKE_LOG="${T}/log" bash "${a}/bin/build-css.sh" >"${T}/out" 2>"${T}/err" || { fail "2a rodada falhou"; return 1; }
-  [[ "$(grep -c '^curl ' "${T}/log")" -eq 2 && "$(wc -l <"${T}/ran")" -eq 2 ]] || fail "baixou de novo com binario presente" || return 1
-  # 6) binario presente adulterado: erro e nao roda
-  echo 'echo adulterado >>'"${T}"'/ran' >>"${a}/bin/tailwindcss"
-  FAKE_LOG="${T}/log" bash "${a}/bin/build-css.sh" >"${T}/out" 2>"${T}/err" && { fail "rodou binario adulterado"; return 1; }
-  [[ "$(wc -l <"${T}/ran")" -eq 2 ]] || fail "binario adulterado rodou"
+test_css_puro() {
+  local c="${APP}/public/assets/app.css" cor
+  [[ -s "${c}" ]] || fail "app.css ausente" || return 1
+  ! grep -qE '@apply|@theme|@import|@source|@layer|@tail[w]ind' "${c}" || fail "app.css com diretiva de framework" || return 1
+  sed -n '/^:root {/,/^}/p' "${c}" >"${T}/root.css"
+  for cor in '--ink: #1a2420;' '--muted: #5a6b62;' '--paper: #f3f5f3;' '--brand: #1a6b4a;' '--brand-deep: #0f3d2c;' '--accent: #c45c26;'; do
+    grep -qF -- "${cor}" "${T}/root.css" || fail ":root sem ${cor}" || return 1
+  done
+  grep -qF -- '--font-display: "Fraunces"' "${T}/root.css" && grep -qF -- '--font-sans: "Source Sans 3"' "${T}/root.css" \
+    || fail ":root sem as fontes" || return 1
+  local l="${APP}/frontend/views/layout.php"
+  grep -q '<link rel="stylesheet" href="/assets/app.css">' "${l}" || fail "layout sem /assets/app.css" || return 1
+  [[ "$(grep -c 'rel="stylesheet"' "${l}")" -eq 2 ]] || fail "layout com outro CSS alem de app.css e da fonte"
+}
+
+test_css_classes_definidas() {
+  "${REAL_PY}" - "${APP}" <<'PY' >&2 || fail "classes sem regra no app.css ou utilitarias"
+import pathlib, re, sys
+app = pathlib.Path(sys.argv[1])
+css = re.sub(r"/\*.*?\*/", "", (app / "public/assets/app.css").read_text(), flags=re.S)
+definidas = set(re.findall(r"\.([A-Za-z_][\w-]*)", css))
+usadas = {}
+def junta(origem, texto):
+    for c in texto.split():
+        usadas.setdefault(c, origem)
+for v in (app / "frontend/views").rglob("*.php"):
+    s = v.read_text()
+    chamadas = set()
+    for attr in re.findall(r'class="([^"]*)"', s):
+        junta(v.name, re.sub(r"<\?=.*?\?>", " ", attr))
+        chamadas |= set(re.findall(r"\$(\w+)\(", attr))
+    # classes montadas em PHP: closures chamados dentro de class="..." ($nav, $erro)
+    for nome, corpo in re.findall(r"\$(\w+) = fn \([^)]*\): string => ([^;]+);", s):
+        if nome in chamadas:
+            for lit in re.findall(r"'([^']*)'", corpo):
+                junta(v.name + " ($" + nome + ")", lit)
+m = re.search(r"function thumbClass.*?\{(.*?)\n    \}", (app / "backend/Models/Imovel.php").read_text(), re.S)
+for lit in re.findall(r"=>\s*'([^']*)'", m.group(1)):
+    junta("Imovel::thumbClass", lit)
+for j in (app / "public/assets/js").glob("*.js"):
+    s = j.read_text()
+    for lit in re.findall(r"className = '([^']*)'", s):
+        junta(j.name, lit)
+    for lit in re.findall(r"classList\.(?:add|remove|toggle|contains)\('([^']*)'", s):
+        junta(j.name, lit)
+UTIL = re.compile(r"[:\[\]/]|^-?(m[trblxy]?|p[trblxy]?|gap(-[xy])?|w|h|size|max-[wh]|min-[wh]|top|left|right|bottom|inset|z|text|font|bg|"
+                  r"border(-[trblxy])?|rounded(-[trbl]{1,2})?|shadow|grid-cols|col-span|row-span|items|justify(-self)?|self|leading|tracking|"
+                  r"opacity|translate(-[xy])?|scale|space-[xy]|aspect|object|overflow|accent|ring|outline|from|to|via)-|"
+                  r"^(flex|grid|block|inline|hidden|relative|absolute|fixed|sticky|sr-only|container|group|underline|uppercase|"
+                  r"truncate|transition|antialiased|shadow|border|rounded|italic|grow|shrink)$")
+erros = [f"{c} ({o}): sem regra no app.css" for c, o in usadas.items() if c not in definidas]
+erros += [f"{c} ({o}): forma utilitaria" for c, o in usadas.items() if UTIL.search(c)]
+assert len(usadas) > 60, f"so {len(usadas)} classes lidas: o parser nao achou as views"
+print("\n".join(erros) or f"{len(usadas)} classes, todas com regra")
+sys.exit(1 if erros else 0)
+PY
+}
+
+test_css_aparencia() {
+  app_harness || return 1
+  BASE="${BASE}" pw_run <<'PY' >&2 || fail "aparencia fora do esperado"
+telas = ["/", "/imoveis/1", "/imoveis/novo", "/imoveis/1/editar", "/nao-existe"]
+pg = browser.new_page(viewport={"width": 1280, "height": 900})
+for t in telas:
+    pg.goto(BASE + t)
+    assert pg.evaluate("getComputedStyle(document.body).backgroundColor") == "rgb(243, 245, 243)", t
+    assert pg.evaluate("getComputedStyle(document.querySelector('.cabecalho-acao')).backgroundColor") == "rgb(26, 107, 74)", t
+    assert pg.locator("nav.menu").is_visible(), t + ": menu oculto em 1280"
+pg.goto(BASE + "/imoveis/1")
+assert pg.evaluate("getComputedStyle(document.querySelector('h1')).fontFamily").startswith("Fraunces"), "titulo sem Fraunces"
+assert pg.evaluate("document.querySelector('aside').getBoundingClientRect().width") == 320, "lateral sem 320 px"
+pg = browser.new_page(viewport={"width": 390, "height": 900})
+for t in telas:
+    pg.goto(BASE + t)
+    assert not pg.locator("nav.menu").is_visible(), t + ": menu visivel em 390"
+    assert pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), t + ": rolagem horizontal em 390"
+pg.goto(BASE + "/imoveis/1")
+assert pg.evaluate("""document.querySelector('aside').getBoundingClientRect().top
+    >= document.querySelector('.imovel-principal').getBoundingClientRect().bottom"""), "lateral nao fica abaixo em 390"
+print("aparencia ok em 1280 e 390")
+PY
+}
+
+test_css_estados_form() {
+  app_harness || return 1
+  BASE="${BASE}" pw_run <<'PY' >&2 || fail "estados do formulario"
+pg = browser.new_page(viewport={"width": 1280, "height": 900})
+pg.goto(BASE + "/imoveis/novo")
+pg.evaluate("document.querySelectorAll('[required]').forEach((e) => e.removeAttribute('required'))")
+pg.fill('input[name="titulo"]', "")
+pg.click('form button[type="submit"]')
+pg.wait_for_selector(".alerta-erro")
+campo = ".rotulo.campo-erro .campo"
+assert pg.locator(campo).count() >= 1, "nenhum campo marcado com erro"
+assert pg.evaluate(f"getComputedStyle(document.querySelector('{campo}')).borderTopColor") == "rgb(220, 38, 38)", "borda do erro"
+assert pg.evaluate("getComputedStyle(document.querySelector('.erro-msg')).color") == "rgb(185, 28, 28)", "mensagem do erro"
+pg.evaluate("document.querySelector('form button[type=submit]').disabled = true")
+assert pg.evaluate("getComputedStyle(document.querySelector('form button[type=submit]')).opacity") == "0.6", "botao desabilitado"
+print("estados ok")
+PY
 }
 
 # ---------------------------------------------------------------- app: fotos
@@ -1371,7 +1453,7 @@ test_fotos_capa_render() {
   app_req GET "/imoveis/${id}"
   [[ "$(grep -oE 'src="/uploads/[^"]+"' "${T}/page.html" | head -1)" == "src=\"/uploads/${id}/${capa}.webp\"" ]] \
     || fail "detalhe nao mostra a capa primeiro" || return 1
-  sed -n '/class="galeria/,/<\/ul>/p' "${T}/page.html" | grep -qF "/uploads/${id}/${outra}.webp" || fail "galeria sem a outra foto" || return 1
+  sed -n '/class="slider-trilho/,/<\/ul>/p' "${T}/page.html" | grep -qF "/uploads/${id}/${outra}.webp" || fail "galeria sem a outra foto" || return 1
   app_req GET /imoveis/2
   grep -q 'class="thumb ' "${T}/page.html" && ! grep -q 'src="/uploads/' "${T}/page.html" || fail "detalhe com capa ausente" || return 1
   # capa apagada do disco, outra foto ainda la: desenho no topo e a outra na galeria
@@ -1380,9 +1462,9 @@ test_fotos_capa_render() {
   capa_sem="$(capa_de "${sem}")"
   rm "${T}/w/storage/uploads/${sem}/${capa_sem}.webp" "${T}/w/storage/uploads/${sem}/${capa_sem}_thumb.webp"
   app_req GET "/imoveis/${sem}"
-  sed -n '/class="relative overflow-hidden rounded-xl"/,/<\/div>/p' "${T}/page.html" | grep -q 'class="thumb ' \
+  sed -n '/class="imovel-midia"/,/<\/div>/p' "${T}/page.html" | grep -q 'class="thumb ' \
     || fail "capa ausente com outras fotos: topo nao mostra o desenho" || return 1
-  sed -n '/class="galeria/,/<\/ul>/p' "${T}/page.html" | grep -qF "/uploads/${sem}/$(foto_n "${sem}" 1).webp" \
+  sed -n '/class="slider-trilho/,/<\/ul>/p' "${T}/page.html" | grep -qF "/uploads/${sem}/$(foto_n "${sem}" 1).webp" \
     || fail "capa ausente: a outra foto sumiu da galeria" || return 1
   app_req GET "/uploads/${id}/${capa}_thumb.webp"
   code_is 200 "miniatura servida" || return 1
@@ -1507,7 +1589,7 @@ slides() {
     $d = new DOMDocument(); libxml_use_internal_errors(true);
     $d->loadHTML(mb_encode_numericentity(file_get_contents($argv[1]), [0x80, 0x10FFFF, 0, 0x1FFFFF], "UTF-8"));
     $x = new DOMXPath($d);
-    foreach ($x->query("//ul[contains(concat(\" \", @class, \" \"), \" galeria \")]/li[contains(@class, \"swiper-slide\")]") as $li) {
+    foreach ($x->query("//ul[contains(concat(\" \", @class, \" \"), \" slider-trilho \")]/li[contains(@class, \"slider-slide\")]") as $li) {
         $img = $x->query(".//img", $li)->item(0);
         if ($img === null) { echo $x->query(".//div[contains(@class, \"thumb\")]", $li)->length ? "thumb" : "?", "\n"; continue; }
         echo $img->getAttribute("src"), "|", $img->getAttribute("alt"), "|", $img->getAttribute("loading"), "\n";
@@ -1541,11 +1623,11 @@ test_galeria_slides() {
 test_galeria_lugar() {
   galeria_3 || return 1
   app_req GET "/imoveis/${ID}"
-  [[ "$(xpath_count "//div[@class='relative overflow-hidden rounded-xl']//*[@data-galeria and contains(@class, 'swiper') and contains(@class, 'aspect-[4/3]')]")" == 1 ]] \
+  [[ "$(xpath_count "//div[@class='imovel-midia']//*[@data-slider and contains(@class, 'slider') and contains(@class, 'imovel-slider')]")" == 1 ]] \
     || fail "slider fora da caixa 4:3 da foto" || return 1
-  [[ "$(xpath_count "//h1[preceding-sibling::div[@class='relative overflow-hidden rounded-xl']]")" == 1 ]] \
+  [[ "$(xpath_count "//h1[preceding-sibling::div[@class='imovel-midia']]")" == 1 ]] \
     || fail "slider nao vem antes do titulo, na mesma coluna" || return 1
-  [[ "$(xpath_count "//ul[contains(@class, 'galeria')]")" == 1 ]] || fail "sobrou outra lista de fotos (grade)"
+  [[ "$(xpath_count "//ul")" == 1 ]] || fail "sobrou outra lista de fotos (grade)"
 }
 
 test_galeria_uma_foto() {
@@ -1555,7 +1637,7 @@ test_galeria_uma_foto() {
   code_is 303 "anunciar 1 foto" || return 1
   app_req GET "/imoveis/${ID}"
   [[ "$(slides)" == "/uploads/${ID}/$(capa_de "${ID}").webp|Foto principal de Com fotos|" ]] || fail "slide unico: $(slides)" || return 1
-  ! grep -qE 'swiper-button-(next|prev)|swiper-pagination' "${T}/page.html" || fail "controles com 1 foto"
+  ! grep -qE 'slider-(anterior|proxima|contador)' "${T}/page.html" || fail "controles com 1 foto"
 }
 
 test_galeria_capa_ausente() {
@@ -1578,10 +1660,10 @@ test_galeria_sem_fotos() {
   app_req GET /imoveis/1
   code_is 200 "detalhe sem fotos" || return 1
   grep -q 'class="thumb ' "${T}/page.html" || fail "sem o desenho do tipo" || return 1
-  ! grep -qE 'swiper-slide|swiper-button|vendor/swiper' "${T}/page.html" || fail "slider ou Swiper sem fotos"
+  ! grep -qE 'data-slider|slider-slide|slider-anterior|slider\.js' "${T}/page.html" || fail "slider ou slider.js sem fotos"
 }
 
-test_galeria_assets() {
+test_slider_assets() {
   galeria_3 || return 1
   local tres="${ID}" uma p
   app_png "${T}/d.png" 43 30
@@ -1589,57 +1671,154 @@ test_galeria_assets() {
   uma="${ID}"
   for p in "/imoveis/${tres}" "/imoveis/${uma}"; do
     app_req GET "${p}"
-    grep -qF 'href="/assets/vendor/swiper/swiper-bundle.min.css"' "${T}/page.html" \
-      && grep -qF 'src="/assets/vendor/swiper/swiper-bundle.min.js"' "${T}/page.html" \
-      && grep -qF 'src="/assets/js/galeria.js"' "${T}/page.html" || fail "${p} sem Swiper" || return 1
+    [[ "$(grep -c 'src="/assets/js/slider.js"' "${T}/page.html")" -eq 1 ]] || fail "${p} sem slider.js" || return 1
   done
   for p in / /imoveis/novo "/imoveis/${tres}/editar" /imoveis/1; do
     app_req GET "${p}"
-    ! grep -qE 'vendor/swiper|galeria\.js' "${T}/page.html" || fail "${p} carrega o Swiper" || return 1
+    ! grep -qF 'slider.js' "${T}/page.html" || fail "${p} carrega o slider.js" || return 1
   done
-  for p in swiper-bundle.min.js swiper-bundle.min.css; do
-    app_req GET "/assets/vendor/swiper/${p}"
-    code_is 200 "${p} servido" || return 1
-  done
+  app_req GET /assets/js/slider.js
+  code_is 200 "slider.js servido" || return 1
+  app_req GET /assets/js/galeria.js
+  code_is 404 "galeria.js ainda servido"
 }
 
-test_galeria_vendor() {
-  local v="${APP}/public/assets/vendor/swiper" f sha
-  head -3 "${v}/swiper-bundle.min.js" | grep -qx ' \* Swiper 14.3.0' || fail "swiper-bundle.min.js nao e a 14.3.0" || return 1
-  grep -q 'The MIT License' "${v}/LICENSE" || fail "LICENSE sem MIT" || return 1
-  for f in swiper-bundle.min.js swiper-bundle.min.css LICENSE; do
-    sha="$(sha256sum "${v}/${f}" | cut -d' ' -f1)"
-    grep -qE "\`${f}\`.*\`${sha}\`" "${APP}/README.md" || fail "README sem o sha256 de ${f}" || return 1
+test_slider_sem_terceiros() {
+  local pat="swi""per" achou
+  [[ ! -e "${APP}/public/assets/vendor" && ! -e "${APP}/public/assets/js/galeria.js" ]] || fail "sobrou vendor/ ou galeria.js" || return 1
+  achou="$(grep -rliI "${pat}" "${APP}" "${PROJECT_DIR}/tests" --exclude-dir=node_modules --exclude-dir=vendor --exclude=composer.lock)"
+  [[ -z "${achou}" ]] || fail "ainda cita ${pat}:" "${achou}"
+}
+
+test_slider_lib() {
+  local js="${APP}/public/assets/js/slider.js"
+  [[ -f "${js}" ]] || fail "slider.js ausente" || return 1
+  [[ "$(wc -l <"${js}")" -le 200 ]] || fail "slider.js com $(wc -l <"${js}") linhas (maximo 200)" || return 1
+  ! grep -qE '\bimport\b|\brequire\(|https?://|fetch\(' "${js}" || fail "slider.js com dependencia externa" || return 1
+  [[ "$(grep -oE 'window\.[A-Za-z]+ =' "${js}" | sort -u)" == "window.LarCertoSlider =" ]] || fail "slider.js cria outro global" || return 1
+  [[ "$(grep -c '^})();$' "${js}")" -eq 1 && "$(head -3 "${js}" | grep -c '^(function () {$')" -eq 1 ]] || fail "slider.js fora de uma IIFE"
+}
+
+test_slider_a11y() {
+  galeria_3 || return 1
+  app_req GET "/imoveis/${ID}"
+  [[ "$(xpath_count "//*[@data-slider and @aria-roledescription='carrossel' and @aria-label='Fotos de Com fotos']")" == 1 ]] \
+    || fail "slider sem aria-roledescription/aria-label" || return 1
+  local k
+  for k in 1 2 3; do
+    [[ "$(xpath_count "//li[contains(@class, 'slider-slide') and @aria-label='Foto ${k} de 3']")" == 1 ]] || fail "slide ${k} sem aria-label" || return 1
   done
+  [[ "$(xpath_count "//*[contains(@class, 'slider-contador') and @aria-live='polite' and normalize-space(.)='1 / 3']")" == 1 ]] \
+    || fail "contador sem aria-live ou sem 1 / 3" || return 1
+  [[ "$(xpath_count "//button[contains(@class, 'slider-anterior') and @aria-label='Foto anterior']")" == 1 ]] \
+    && [[ "$(xpath_count "//button[contains(@class, 'slider-proxima') and @aria-label='Próxima foto']")" == 1 ]] \
+    || fail "botoes sem rotulo"
+}
+
+test_slider_navegador() {
+  galeria_3 || return 1
+  BASE="${BASE}" ID="${ID}" W="${T}/w" pw_run <<'PY' >&2 || fail "slider no navegador"
+fotos_reais(os.environ["W"] + "/storage/uploads/" + os.environ["ID"])
+url = BASE + "/imoveis/" + os.environ["ID"]
+erros = []
+
+def abrir(ctx):
+    pg = ctx.new_page()
+    pg.on("pageerror", lambda e: erros.append(str(e)))
+    pg.on("console", lambda m: m.type == "error" and erros.append(m.text))
+    pg.goto(url)
+    pg.wait_for_selector(".slider-pronto")
+    return pg
+
+def estado(pg):
+    return pg.evaluate("""() => [document.querySelector('.slider-contador').textContent.trim(),
+        document.querySelector('.slider-anterior').disabled, document.querySelector('.slider-proxima').disabled]""")
+
+def esperar(pg, texto):
+    pg.wait_for_function("(t) => document.querySelector('.slider-contador').textContent.trim() === t", arg=texto)
+
+ctx = browser.new_context(viewport={"width": 1280, "height": 900})
+pg = abrir(ctx)
+assert pg.locator(".slider-slide").count() == 3
+assert estado(pg) == ["1 / 3", True, False], estado(pg)
+pg.click(".slider-proxima"); esperar(pg, "2 / 3")
+pg.focus("[data-slider]"); pg.keyboard.press("ArrowRight"); esperar(pg, "3 / 3")
+assert estado(pg) == ["3 / 3", False, True], estado(pg)
+caixa = pg.locator("[data-slider]").bounding_box()
+cx, cy = caixa["x"] + caixa["width"] / 2, caixa["y"] + caixa["height"] / 2
+def arrastar(dx):
+    pg.mouse.move(cx, cy); pg.mouse.down(); pg.mouse.move(cx + dx / 2, cy, steps=4); pg.mouse.move(cx + dx, cy, steps=4); pg.mouse.up()
+# sem loop: no ultimo slide, tecla e arrasto para a esquerda nao voltam ao primeiro
+pg.keyboard.press("ArrowRight"); arrastar(-120); pg.wait_for_timeout(400)
+assert estado(pg) == ["3 / 3", False, True], ("voltou ao inicio depois do ultimo", estado(pg))
+pg.keyboard.press("ArrowLeft"); esperar(pg, "2 / 3")
+# limiar de 50 px: 40 e 50 nao mudam, 60 muda (nos dois sentidos)
+for dx in (-40, -50, 40, 50):
+    arrastar(dx); pg.wait_for_timeout(400)
+    assert estado(pg)[0] == "2 / 3", f"arrasto de {dx} px mudou o slide"
+arrastar(-60); esperar(pg, "3 / 3")
+arrastar(60); esperar(pg, "2 / 3")
+pg.wait_for_timeout(400)
+img = pg.locator(".slider-slide").nth(1).bounding_box()
+assert abs(img["x"] - caixa["x"]) < 1, ("slide 2 fora da caixa", img, caixa)
+quebradas = pg.evaluate("[...document.querySelectorAll('.slider-slide img')].filter((i) => i.complete && i.naturalWidth === 0).length")
+assert quebradas == 0, f"{quebradas} imagem(ns) quebrada(s)"
+
+# toque: eventos de toque reais pelo CDP (o navegador gera os pointer events)
+tctx = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+tp = abrir(tctx)
+cdp = tctx.new_cdp_session(tp)
+b = tp.locator("[data-slider]").bounding_box()
+x, y = b["x"] + b["width"] * 0.8, b["y"] + b["height"] / 2
+cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+for k in range(1, 9):
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": x - 20 * k, "y": y}]})
+cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+tp.wait_for_function("document.querySelector('.slider-contador').textContent.trim() === '2 / 3'")
+assert not erros, erros
+print("slider ok:", estado(pg), "toque:", tp.evaluate("document.querySelector('.slider-contador').textContent"))
+PY
 }
 
 test_galeria_no_js() {
-  local py="${PROJECT_DIR}/../.venv/bin/python"
-  [[ -x "${py}" ]] && "${py}" -c 'import playwright' 2>/dev/null || fail "Playwright do .venv ausente" || return 1
   galeria_3 || return 1
-  BASE="${BASE}" ID="${ID}" "${py}" - <<'PY' >&2 || fail "slider sem JS"
-import glob, os
-from playwright.sync_api import Error, sync_playwright
-
-with sync_playwright() as p:
-    try:
-        browser = p.chromium.launch()
-    except Error:
-        cache = sorted(glob.glob(os.path.expanduser("~/.cache/ms-playwright/chromium-*/chrome-linux*/chrome")))
-        assert cache, "nenhum Chromium do Playwright no cache"
-        browser = p.chromium.launch(executable_path=cache[-1])
-    page = browser.new_context(java_script_enabled=False).new_page()
-    page.goto(os.environ["BASE"] + "/imoveis/" + os.environ["ID"])
-    caixa = page.locator("[data-galeria]").bounding_box()
-    imgs = page.locator(".swiper-slide img")
-    um, dois = imgs.nth(0).bounding_box(), imgs.nth(1).bounding_box()
-    assert caixa and um and dois, (caixa, um, dois)
-    assert abs(um["x"] - caixa["x"]) < 1 and abs(um["width"] - caixa["width"]) < 1, (caixa, um)
-    assert dois["x"] >= caixa["x"] + caixa["width"] - 1, (caixa, dois)
-    for sel in (".swiper-button-next", ".swiper-button-prev", ".swiper-pagination"):
-        assert not page.locator(sel).is_visible(), sel + " visivel sem JS"
-    browser.close()
+  BASE="${BASE}" ID="${ID}" pw_run <<'PY' >&2 || fail "slider sem JS"
+page = browser.new_context(java_script_enabled=False, viewport={"width": 1280, "height": 900}).new_page()
+page.goto(BASE + "/imoveis/" + os.environ["ID"])
+caixa = page.locator("[data-slider]").bounding_box()
+imgs = page.locator(".slider-slide img")
+um, dois = imgs.nth(0).bounding_box(), imgs.nth(1).bounding_box()
+assert caixa and um and dois, (caixa, um, dois)
+assert abs(um["x"] - caixa["x"]) < 1 and abs(um["width"] - caixa["width"]) < 1, (caixa, um)
+assert abs(caixa["height"] - caixa["width"] * 3 / 4) < 1, ("caixa fora de 4:3", caixa)
+assert dois["x"] >= caixa["x"] + caixa["width"] - 1, (caixa, dois)
+for sel in (".slider-anterior", ".slider-proxima", ".slider-contador"):
+    assert not page.locator(sel).is_visible(), sel + " visivel sem JS"
+page.mouse.move(caixa["x"] + caixa["width"] / 2, caixa["y"] + caixa["height"] / 2)
+page.mouse.wheel(caixa["width"], 0)
+page.wait_for_timeout(600)
+dois = imgs.nth(1).bounding_box()
+assert abs(dois["x"] - caixa["x"]) < 2, ("rolagem horizontal nao trouxe a 2a foto", caixa, dois)
+print("sem JS ok")
 PY
+}
+
+test_ansible_web_sem_slider_antigo() {
+  local r="${PROJECT_DIR}/ansible/roles/web/tasks/main.yml" bloco
+  bloco="$(sed -n '/name: Tirar da VM os arquivos de versoes antigas/,/^- name:/p' "${r}")"
+  grep -q 'state: absent' <<<"${bloco}" || fail "limpeza sem state: absent" || return 1
+  grep -q 'public/assets/vendor' <<<"${bloco}" && grep -q 'public/assets/js/galeria.js' <<<"${bloco}" \
+    || fail "limpeza nao tira vendor/ e galeria.js da VM" || return 1
+  grep -q 'loop: \[public, backend, frontend/views\]' "${r}" || fail "papel web nao copia public/ inteiro"
+}
+
+test_docs_sem_frameworks() {
+  local pat="tail""wind|swi""per" f
+  for f in "${APP}/README.md" "${PROJECT_DIR}/README.md"; do
+    ! grep -qiE "${pat}" "${f}" || fail "${f} ainda cita ${pat}" || return 1
+  done
+  ! grep -qiE "${pat}" "${PROJECT_DIR}/../TASKS.md" || fail "TASKS.md ainda cita ${pat}" || return 1
+  grep -qF 'public/assets/js/slider.js' "${APP}/README.md" && grep -qF 'CSS puro' "${APP}/README.md" || fail "README da app sem o CSS/slider novos"
 }
 
 # ---------------------------------------------------------------- formulario de fotos
@@ -1669,7 +1848,7 @@ test_galeria_form_markup() {
   [[ "$(xpath_count "${f2}/figcaption//input[@name='remover[]' and @value='${outra}']")" == 1 ]] || fail "galeria sem o remover da outra" || return 1
   [[ "$(xpath_count "${f2}//label[contains(., 'Usar como capa')]")" == 1 ]] || fail "galeria sem Usar como capa" || return 1
   [[ "$(xpath_count "${f1}//label[contains(., 'Usar como capa')]")" == 0 ]] || fail "capa com Usar como capa" || return 1
-  [[ "$(xpath_count "${f1}/figcaption//input[@name='capa' and contains(@class, 'sr-only')]")" == 1 ]] || fail "radio da capa visivel" || return 1
+  [[ "$(xpath_count "${f1}/figcaption//input[@name='capa' and contains(@class, 'so-leitor')]")" == 1 ]] || fail "radio da capa visivel" || return 1
   [[ "$(xpath_count "${f1}/figcaption//input[@name='remover[]' and @value='${capa}']")" == 1 ]] || fail "capa sem o Remover" || return 1
   # ordem: Capa, foto da capa, Galeria do anuncio (1), foto da galeria
   [[ "$(xpath_count "//div[@id='previa-fotos']/*[1][self::p and normalize-space(.)='Capa']")" == 1 ]] || fail "Capa nao e o primeiro bloco" || return 1
@@ -1748,7 +1927,7 @@ with sync_playwright() as p:
     outra.check()
     page.click('form button[type="submit"]')
     page.wait_for_url(lambda u: "/editar" not in u)
-    primeira = page.locator("[data-galeria] .swiper-slide img").first.get_attribute("src")
+    primeira = page.locator("[data-slider] .slider-slide img").first.get_attribute("src")
     assert primeira.endswith("/" + valor[2:] + ".webp"), (primeira, valor)
     browser.close()
 PY
@@ -1857,7 +2036,7 @@ test_apprun_help() {
   apprun help
   expect_rc 0 || return 1
   local c
-  for c in setup up down ps logs restart db:populate db:reset db:console css check; do
+  for c in setup up down ps logs restart db:populate db:reset db:console check; do
     grep -qE "^  ${c}( |$)" "${T}/out" || fail "help sem ${c}" || return 1
   done
   apprun
@@ -2033,7 +2212,7 @@ test_apprun_ansible_web() {
 test_apprun_documented() {
   local r="${APP}/README.md" c
   grep -q '^\./project/app/run.sh setup\|^bash project/app/run.sh setup\|^\./run.sh setup' "${r}" || fail "README sem ./run.sh setup" || return 1
-  for c in setup up down restart ps logs db:populate db:reset db:console css check phpstan test:browser test composer; do
+  for c in setup up down restart ps logs db:populate db:reset db:console check phpstan test:browser test composer; do
     grep -qE "^\| \`${c}( |\`)" "${r}" || fail "README sem ${c} na tabela" || return 1
   done
   grep -q 'sudo /var/www/larcerto/run.sh' "${r}" || fail "README sem o uso na VM" || return 1

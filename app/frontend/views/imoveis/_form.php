@@ -4,12 +4,12 @@ use LarCerto\Models\Imovel;
 
 $erro = fn (string $campo): string => isset($erros[$campo]) ? 'campo-erro' : '';
 ?>
-<form class="grid gap-5 rounded-xl border border-line bg-white p-6 shadow-sm" method="post"
+<form class="formulario" method="post"
       action="<?= e($id === null ? '/imoveis' : '/imoveis/' . $id) ?>" enctype="multipart/form-data">
   <input type="hidden" name="csrf" value="<?= e($csrf) ?>">
 
   <?php if ($erros): ?>
-    <div class="rounded-lg border border-red-700/30 bg-red-50 px-4 py-3 font-semibold text-red-800" role="alert">Corrija os campos destacados antes de salvar.</div>
+    <div class="alerta-erro" role="alert">Corrija os campos destacados antes de salvar.</div>
   <?php endif ?>
 
   <label class="rotulo <?= e($erro('titulo')) ?>">
@@ -18,7 +18,7 @@ $erro = fn (string $campo): string => isset($erros[$campo]) ? 'campo-erro' : '';
     <?php if (isset($erros['titulo'])): ?><small class="erro-msg"><?= e($erros['titulo']) ?></small><?php endif ?>
   </label>
 
-  <div class="grid gap-5 sm:grid-cols-2">
+  <div class="form-grade">
     <label class="rotulo <?= e($erro('tipo')) ?>">
       Tipo
       <select class="campo" name="tipo" required>
@@ -71,59 +71,59 @@ $erro = fn (string $campo): string => isset($erros[$campo]) ? 'campo-erro' : '';
     </label>
   </div>
 
-  <label class="flex items-center gap-2 font-semibold">
-    <input class="size-4 accent-brand" type="checkbox" name="verificado" value="1" <?= e($dados['verificado'] ? 'checked' : '') ?>>
+  <label class="marcar-linha">
+    <input type="checkbox" name="verificado" value="1" <?= e($dados['verificado'] ? 'checked' : '') ?>>
     Imóvel verificado pela equipe LarCerto (exibe o selo)
   </label>
 
-  <fieldset class="grid gap-3 rounded-lg border border-line p-4 <?= e($erro('fotos')) ?>">
-    <legend class="px-1 font-semibold">Fotos</legend>
-    <p class="text-sm text-muted">
+  <fieldset class="fotos <?= e($erro('fotos')) ?>">
+    <legend>Fotos</legend>
+    <p class="fotos-ajuda">
       Até <?= e($maxFotos) ?> fotos por imóvel (JPEG, PNG ou WebP, até 20 MB cada). Fotos grandes são reduzidas
       antes do envio. Escolha quantas vezes quiser: as fotos se somam na lista. Marque a <strong>capa</strong>: ela aparece no card da listagem e abre a galeria do anúncio.
     </p>
 
-    <div id="previa-fotos" class="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-live="polite">
+    <div id="previa-fotos" class="previa" aria-live="polite">
       <?php
       $capa = array_values(array_filter($fotos, fn (array $foto): bool => $foto['capa']));
       $galeria = array_values(array_filter($fotos, fn (array $foto): bool => !$foto['capa']));
       ?>
       <?php if (!$fotos): ?>
-        <p class="col-span-full text-sm text-muted">Nenhuma foto ainda</p>
+        <p class="previa-nota">Nenhuma foto ainda</p>
       <?php endif ?>
       <?php if ($capa): ?>
-        <p class="col-span-full font-semibold">Capa</p>
+        <p class="previa-titulo">Capa</p>
         <?php foreach ($capa as $foto): ?>
-          <figure class="col-span-full overflow-hidden rounded-lg border border-line" data-papel="capa">
-            <img class="aspect-[4/3] w-full object-cover" src="<?= e($foto['url']) ?>" alt="Capa do anúncio">
-            <figcaption class="grid gap-1 p-2 text-sm">
-              <label class="sr-only"><input class="sr-only" type="radio" name="capa" value="<?= e('h:' . $foto['nome']) ?>" checked> <span data-texto-capa>Capa do anúncio</span></label>
-              <label class="flex items-center gap-1.5 text-red-700"><input class="accent-red-700" type="checkbox" name="remover[]" value="<?= e($foto['nome']) ?>"> <span data-texto-remover>Remover</span></label>
-              <small class="hidden text-muted" data-aviso-remover>Será removida ao salvar</small>
+          <figure class="foto foto-capa" data-papel="capa">
+            <img src="<?= e($foto['url']) ?>" alt="Capa do anúncio">
+            <figcaption>
+              <label class="foto-opcao so-leitor"><input class="so-leitor" type="radio" name="capa" value="<?= e('h:' . $foto['nome']) ?>" checked> <span data-texto-capa>Capa do anúncio</span></label>
+              <label class="foto-opcao foto-remover"><input type="checkbox" name="remover[]" value="<?= e($foto['nome']) ?>"> <span data-texto-remover>Remover</span></label>
+              <small class="foto-aviso" data-aviso-remover hidden>Será removida ao salvar</small>
             </figcaption>
           </figure>
         <?php endforeach ?>
       <?php endif ?>
       <?php if ($galeria): ?>
-        <p class="col-span-full font-semibold">Galeria do anúncio (<?= e(count($galeria)) ?>)</p>
+        <p class="previa-titulo">Galeria do anúncio (<?= e(count($galeria)) ?>)</p>
         <?php foreach ($galeria as $foto): ?>
-          <figure class="overflow-hidden rounded-lg border border-line" data-papel="galeria">
-            <img class="aspect-[4/3] w-full object-cover" src="<?= e($foto['url']) ?>" alt="Foto do imóvel">
-            <figcaption class="grid gap-1 p-2 text-sm">
-              <label class="flex items-center gap-1.5" data-rotulo-capa><input class="accent-brand" type="radio" name="capa" value="<?= e('h:' . $foto['nome']) ?>"> <span data-texto-capa>Usar como capa</span></label>
-              <label class="flex items-center gap-1.5 text-red-700"><input class="accent-red-700" type="checkbox" name="remover[]" value="<?= e($foto['nome']) ?>"> <span data-texto-remover>Remover</span></label>
-              <small class="hidden text-muted" data-aviso-remover>Será removida ao salvar</small>
+          <figure class="foto" data-papel="galeria">
+            <img src="<?= e($foto['url']) ?>" alt="Foto do imóvel">
+            <figcaption>
+              <label class="foto-opcao" data-rotulo-capa><input type="radio" name="capa" value="<?= e('h:' . $foto['nome']) ?>"> <span data-texto-capa>Usar como capa</span></label>
+              <label class="foto-opcao foto-remover"><input type="checkbox" name="remover[]" value="<?= e($foto['nome']) ?>"> <span data-texto-remover>Remover</span></label>
+              <small class="foto-aviso" data-aviso-remover hidden>Será removida ao salvar</small>
             </figcaption>
           </figure>
         <?php endforeach ?>
       <?php endif ?>
     </div>
 
-    <input class="campo file:mr-3 file:rounded-md file:border-0 file:bg-brand/10 file:px-3 file:py-1.5 file:font-semibold file:text-brand"
-           type="file" name="fotos[]" multiple accept="image/jpeg,image/png,image/webp" data-fotos="previa-fotos" data-cabem="<?= e($cabem) ?>" data-max="<?= e($maxFotos) ?>">
+    <input class="campo campo-arquivo" type="file" name="fotos[]" multiple accept="image/jpeg,image/png,image/webp"
+           data-fotos="previa-fotos" data-cabem="<?= e($cabem) ?>" data-max="<?= e($maxFotos) ?>">
 
     <?php if (isset($erros['fotos'])): ?><small class="erro-msg"><?= e($erros['fotos']) ?></small><?php endif ?>
   </fieldset>
 
-  <button class="btn btn-accent w-full" type="submit"><?= e($id === null ? 'Salvar anúncio' : 'Salvar alterações') ?></button>
+  <button class="btn btn-accent btn-bloco" type="submit"><?= e($id === null ? 'Salvar anúncio' : 'Salvar alterações') ?></button>
 </form>

@@ -20,8 +20,7 @@ from pathlib import Path
 
 APP = Path(os.environ.get("APP_DIR") or Path(__file__).resolve().parent.parent / "app")
 PT_WORDS = set("de da das dos que nao para com sem uma um os ao na nos pelo pela ou entao quando isso fica vai sao tem mas esta este essa esse ainda depois cada mesmo todo toda ja deve pode campo foto fotos formulario valida".split())
-SKIP = {"public/assets/app.css", "README.md"}
-VENDOR = "public/assets/vendor/"  # third-party files keep their own licence header
+SKIP = {"README.md"}
 
 PHP_SPLIT = r"""
 $out = [];
@@ -38,7 +37,7 @@ def files():
     names = git.stdout.split() if git.returncode == 0 else [str(p.relative_to(APP)) for p in APP.rglob("*")]
     for rel in sorted(names):
         p = APP / rel
-        if rel in SKIP or rel.startswith(VENDOR) or not p.is_file() or p.suffix in {".svg", ".md"}:
+        if rel in SKIP or not p.is_file() or p.suffix in {".svg", ".md"}:
             continue
         yield rel, p
 

@@ -53,41 +53,38 @@
 
   function titulo(texto) {
     const p = document.createElement('p');
-    p.className = 'col-span-full font-semibold';
+    p.className = 'previa-titulo';
     p.textContent = texto;
     return p;
   }
 
   function criarFigura(arquivo) {
     const figura = document.createElement('figure');
-    figura.className = 'overflow-hidden rounded-lg border border-line';
+    figura.className = 'foto';
 
     const img = document.createElement('img');
-    img.className = 'aspect-[4/3] w-full object-cover';
     img.alt = 'Prévia de ' + arquivo.name;
     img.src = URL.createObjectURL(arquivo);
     img.onload = () => URL.revokeObjectURL(img.src);
 
     const legenda = document.createElement('figcaption');
-    legenda.className = 'grid gap-1 p-2 text-sm';
     const linha = document.createElement('div');
-    linha.className = 'flex items-center justify-between gap-2';
+    linha.className = 'foto-linha';
     const rotulo = document.createElement('label');
-    rotulo.className = 'flex items-center gap-1.5';
+    rotulo.className = 'foto-opcao';
     const radio = document.createElement('input');
     radio.type = 'radio';
     radio.name = 'capa';
-    radio.className = 'accent-brand';
     const texto = document.createElement('span');
     texto.setAttribute('data-texto-capa', '');
     rotulo.append(radio, texto);
     const peso = document.createElement('span');
-    peso.className = 'text-muted';
+    peso.className = 'foto-peso';
     peso.textContent = tamanho(arquivo.size);
     linha.append(rotulo, peso);
     const remover = document.createElement('button');
     remover.type = 'button';
-    remover.className = 'justify-self-start font-semibold text-red-700 hover:underline';
+    remover.className = 'foto-tirar';
     remover.setAttribute('data-remover-nova', '');
     remover.textContent = 'Remover';
     legenda.append(linha, remover);
@@ -115,18 +112,18 @@
 
     function atualizarRemocao(figura) {
       const marca = marcada(figura);
-      figura.classList.toggle('opacity-50', marca);
+      figura.classList.toggle('foto-removida', marca);
       figura.querySelector('[data-texto-remover]').textContent = marca ? 'Desfazer' : 'Remover';
-      figura.querySelector('[data-aviso-remover]').classList.toggle('hidden', !marca);
+      figura.querySelector('[data-aviso-remover]').hidden = !marca;
     }
 
     function papel(figura, capa) {
-      figura.classList.toggle('col-span-full', capa);
+      figura.classList.toggle('foto-capa', capa);
       figura.dataset.papel = capa ? 'capa' : 'galeria';
       const radio = radioDe(figura);
       const rotulo = radio.closest('label');
-      radio.classList.toggle('sr-only', capa);
-      rotulo.classList.toggle('sr-only', capa);
+      radio.classList.toggle('so-leitor', capa);
+      rotulo.classList.toggle('so-leitor', capa);
       rotulo.querySelector('[data-texto-capa]').textContent = capa ? 'Capa do anúncio' : 'Usar como capa';
     }
 
@@ -156,7 +153,7 @@
       const nodos = [];
       if (aviso) {
         const p = document.createElement('p');
-        p.className = 'col-span-full text-sm text-red-700';
+        p.className = 'previa-aviso';
         p.textContent = aviso;
         nodos.push(p);
       }
@@ -168,7 +165,7 @@
       }
       if (!todas.length) {
         const vazio = document.createElement('p');
-        vazio.className = 'col-span-full text-sm text-muted';
+        vazio.className = 'previa-nota';
         vazio.textContent = 'Nenhuma foto ainda';
         nodos.push(vazio);
       }

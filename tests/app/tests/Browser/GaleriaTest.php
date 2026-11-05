@@ -10,19 +10,18 @@ test('slider navega por 3 fotos com botao e teclado', function () {
     figuras($page, 3);
     $page->press('Salvar anúncio')
         ->assertSee('Anúncio criado.')
-        ->assertCount('.swiper-slide', 3)
-        ->assertScript("document.querySelector('[data-galeria]').getBoundingClientRect().width"
-            . " <= document.querySelector('[data-galeria]').closest('.min-w-0').getBoundingClientRect().width + 1"
+        ->assertCount('.slider-slide', 3)
+        ->assertScript("document.querySelector('[data-slider]').getBoundingClientRect().width"
+            . " <= document.querySelector('[data-slider]').closest('.imovel-principal').getBoundingClientRect().width + 1"
             . " && document.documentElement.scrollWidth <= window.innerWidth")
-        ->assertSeeIn('.swiper-pagination', '1 / 3')
-        ->assertAttributeContains('.swiper-button-prev', 'class', 'swiper-button-disabled')
-        ->click('.swiper-button-next')
-        ->assertSeeIn('.swiper-pagination', '2 / 3')
-        ->keys('[data-galeria]', 'ArrowRight')
-        ->assertSeeIn('.swiper-pagination', '3 / 3')
-        ->assertAttributeContains('.swiper-button-next', 'class', 'swiper-button-disabled')
-        ->assertScript("document.querySelector('[data-galeria]').swiper.allowTouchMove === true"
-            . " && document.querySelector('[data-galeria]').swiper.params.simulateTouch === true")
+        ->assertSeeIn('.slider-contador', '1 / 3')
+        ->assertScript("document.querySelector('.slider-anterior').disabled", true)
+        ->click('.slider-proxima')
+        ->assertSeeIn('.slider-contador', '2 / 3')
+        ->keys('[data-slider]', 'ArrowRight')
+        ->assertSeeIn('.slider-contador', '3 / 3')
+        ->assertScript("document.querySelector('.slider-proxima').disabled", true)
+        ->assertScript("document.querySelector('[data-slider]').larCertoSlider.atual()", 2)
         ->assertNoJavaScriptErrors()
         ->assertNoBrokenImages();
 
@@ -39,9 +38,9 @@ test('uma foto aparece sem controles', function () {
     $page->press('Salvar anúncio')
         ->assertSee('Anúncio criado.')
         ->assertVisible('img[alt="Foto principal de ' . $titulo . '"]')
-        ->assertNotPresent('.swiper-button-next')
-        ->assertNotPresent('.swiper-button-prev')
-        ->assertNotPresent('.swiper-pagination');
+        ->assertNotPresent('.slider-proxima')
+        ->assertNotPresent('.slider-anterior')
+        ->assertNotPresent('.slider-contador');
 
     excluir($page);
 });
@@ -61,7 +60,7 @@ test('formulario acumula tres fotos e salva todas', function () {
         ->assertCount('#previa-fotos figure button', 3)
         ->press('Salvar anúncio')
         ->assertSee('Anúncio criado.')
-        ->assertCount('.swiper-slide', 3);
+        ->assertCount('.slider-slide', 3);
 
     excluir($page);
 });
@@ -83,9 +82,9 @@ test('formulario acumula, remove a do meio e escolhe a capa', function () {
         ->radio('capa', 'n:1')
         ->press('Salvar anúncio')
         ->assertSee('Anúncio criado.')
-        ->assertCount('.swiper-slide', 2);
+        ->assertCount('.slider-slide', 2);
 
-    $largura = $page->script("new Promise((r) => { const i = document.querySelector('.swiper-slide img');"
+    $largura = $page->script("new Promise((r) => { const i = document.querySelector('.slider-slide img');"
         . " i.complete && i.naturalWidth ? r(i.naturalWidth) : i.addEventListener('load', () => r(i.naturalWidth)); })");
     expect($largura)->toBe(1024);
 

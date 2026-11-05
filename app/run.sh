@@ -26,7 +26,6 @@ Uso: ./run.sh <comando> [args]        (modo atual: ${MODE})
   db:populate        aplica a semente (22 imóveis) só se a tabela estiver vazia
   db:reset [--yes]   apaga banco e fotos e volta à semente (pede confirmação)
   db:console         abre o cliente mariadb no banco larcerto
-  css                gera public/assets/app.css (só no local)
   check [checks]     roda tests/app-checks.sh (só no local)
   phpstan [args]     análise estática (PHPStan nível 6) de backend/ e public/ (só no local)
   test:browser [args] testes no navegador (Pest + Playwright); sobe a app se preciso (só no local)
@@ -216,7 +215,6 @@ case "${cmd}" in
   db:populate) cmd_populate ;;
   db:reset) cmd_reset "$@" ;;
   db:console) cmd_console ;;
-  css) only_local css && bash "${DIR}/bin/build-css.sh" ;;
   phpstan)
     only_local phpstan
     cmd_phpstan "$@"

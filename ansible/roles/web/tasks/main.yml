@@ -117,11 +117,12 @@
   loop: [public, backend, frontend/views]
   when: crud_app.stat.exists
 
-- name: Tirar da VM os arquivos da estrutura antiga (versao anterior ao MVC)
+- name: Tirar da VM os arquivos de versoes antigas (antes do MVC e o slider antigo)
   ansible.builtin.file:
     path: "/var/www/larcerto/{{ item }}"
     state: absent
-  loop: [src, public/anunciar.php, public/editar.php, public/excluir.php, public/imovel.php, public/assets/styles.css]
+  loop: [src, public/anunciar.php, public/editar.php, public/excluir.php, public/imovel.php, public/assets/styles.css,
+         public/assets/vendor, public/assets/js/galeria.js]
   when: crud_app.stat.exists
 
 - name: Cliente do MariaDB e PHP CLI para o run.sh (le o config.php e fala com a VM db)
