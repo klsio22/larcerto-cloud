@@ -49,6 +49,13 @@ check_https_ok() {
   grep -q 'LarCerto' <<<"${page}" && grep -qE 'class="resumo">[1-9][0-9]* imóve' <<<"${page}"
 }
 
+# Horizon por HTTPS no VIP com a CA LarCerto (spec cloud-https). Fora do ALL: o certificado do
+# Horizon e opcional (REQ12) e so existe depois do ./project/lab.sh cert cloud + deploy.
+check_https_cloud() {
+  [[ "$(curl -sS -o /dev/null -w '%{http_code}' --cacert "${PKI}/ca.crt" \
+    --resolve "cloud.${DOMAIN}:443:192.168.1.250" "https://cloud.${DOMAIN}/auth/login/")" == 200 ]]
+}
+
 # ad-hoc na VM: imprime so o stdout de um comando que deu certo (rc=0);
 # linha FAILED do callback -o traz o stderr, que nao pode virar prova.
 on_vm() {

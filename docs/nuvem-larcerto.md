@@ -91,6 +91,37 @@ se a cadeia não confere ou se o `web` serve outro). Emitir de novo com a mesma 
 `./project/lab.sh cert renew`. Trocar a CA (quebra a confiança no navegador até reimportar):
 `./project/lab.sh cert renew --new-ca`, que copia `files/pki/` antes e pede a palavra `nova-ca`.
 
+### HTTPS do Horizon (`https://cloud.larcerto.com.br`)
+
+Opcional (REQ12). A mesma CA LarCerto assina um certificado próprio do painel (`cloud` e o apelido
+`horizon`), emitido na VM `ca`; nada é pago e nada sai do lab. O Kolla não liga o TLS só do painel com
+um VIP único, então um frontend extra do HAProxy do Kolla
+([`kolla-config/config/haproxy/services.d/horizon-https.cfg`](../kolla-config/config/haproxy/services.d/horizon-https.cfg))
+serve o Horizon em `192.168.1.250:443`. As APIs, os openrc e o Terraform continuam em HTTP.
+
+```bash
+./project/lab.sh cert cloud   # emite na VM ca e grava /etc/kolla/haproxy/haproxy.pem (root)
+./project/lab.sh deploy       # uma vez: cria o frontend 443 e o ajuste do Horizon; o Kolla reinicia o haproxy
+./project/lab.sh cert         # bloco "Horizon (cloud)": validade e servido: igual
+bash project/tests/cloud-checks.sh https_cloud
+```
+
+Como a CA é a mesma, o navegador que já passou pelo `cert trust` confia no painel sem outro passo
+(o `cert trust` de novo diz `ja estava`). O `cert cloud` só emite de novo se `files/pki/cloud.crt`
+faltar ou não conferir com a CA (por exemplo, depois de um `cert renew --new-ca`); com o frontend já
+criado, ele mesmo reinicia o haproxy para servir o certificado novo.
+
+Desfazer (o template fica no repo; sem o `.pem` ele sai vazio):
+
+```bash
+sudo rm /etc/kolla/haproxy/haproxy.pem /etc/kolla/haproxy/services.d/horizon-https.cfg
+docker exec haproxy rm -f /etc/haproxy/certificates/haproxy.pem   # cópia no volume letsencrypt_certificates
+./project/lab.sh deploy
+```
+
+Não apague só o template do repo: o Kolla não remove o `.cfg` já gerado em `/etc/kolla`, e a cópia do
+`.pem` fica no volume do container, então a 443 continuaria no ar com o certificado antigo.
+
 ### Ver as VMs
 
 ```bash
@@ -119,6 +150,7 @@ Depois de recriar as VMs os IPs e as chaves de host mudam: se o `ssh` reclamar d
 
 ```bash
 bash project/tests/cloud-checks.sh     # dns_www, dns_cloud, dns_coringa, dns_horizon, dns_db_from_web, http_redirect, https_ok
+bash project/tests/cloud-checks.sh https_cloud   # opcional: Horizon por HTTPS (depois do cert cloud)
 ```
 
 Nomes da zona `larcerto.com.br` (VM `dns`): `larcerto.com.br`, `www` e `web` vão para a web, `dns` e

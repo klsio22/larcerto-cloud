@@ -2845,6 +2845,12 @@ cert_gera_pki() {
 # o resto e o openssl de verdade.
 cert_fake_openssl() {
   fake openssl '
+if [[ "$1" == s_client && " $* " == *" -servername cloud.larcerto.com.br "* ]]; then
+  # o Horizon so responde no VIP do Kolla
+  [[ " $* " == *" -connect 192.168.1.250:443 "* && -n "${FAKE_SERVED_CLOUD_PEM:-}" ]] || exit 1
+  cat "${FAKE_SERVED_CLOUD_PEM}"
+  exit 0
+fi
 if [[ "$1" == s_client ]]; then
   [[ "${FAKE_SERVED_DOWN:-0}" == 1 ]] && exit 1
   # exec: o timeout do cert.sh mata este processo, e nao um filho que segure o pipe
@@ -2895,7 +2901,7 @@ cert_sandbox() {
   export PATH="${T}/bin:${PATH}"
   export FAKE_PKI="${T}/project/ansible/files/pki"
   export FAKE_SERVED_PEM="${FAKE_PKI}/larcerto.crt"
-  unset FAKE_SERVED_DOWN FAKE_ANSIBLE_RC FAKE_NEW_PKI CERT_NOW CERT_WARN_DAYS
+  unset FAKE_SERVED_DOWN FAKE_ANSIBLE_RC FAKE_NEW_PKI CERT_NOW CERT_WARN_DAYS FAKE_CLOUD_PKI FAKE_SERVED_CLOUD_PEM
   mkdir -p "${HOME}" "${T}/project/ansible/inventory" "${T}/venv/bin"
   printf '[web]\nweb ansible_host=172.24.4.199\n' >"${T}/project/ansible/inventory/hosts.ini"
   cert_gera_pki "${FAKE_PKI}" 825
@@ -2906,6 +2912,11 @@ echo "ansible-playbook $* cwd=$(basename "$PWD")" >>"$FAKE_LOG"
 echo "backups-na-chamada=$(ls -d "$FAKE_PKI"/backup-* 2>/dev/null | wc -l)" >>"$FAKE_LOG"
 if [[ "$*" == *ca_new=true* && -n "${FAKE_NEW_PKI:-}" ]]; then
   cp "$FAKE_NEW_PKI/ca.crt" "$FAKE_NEW_PKI/ca.key" "$FAKE_NEW_PKI/larcerto.crt" "$FAKE_NEW_PKI/larcerto.key" "$FAKE_PKI/"
+fi
+# cert_cloud: o fetch do papel ca traria cloud.crt e cloud.key (com o modo do umask)
+if [[ "$*" == *cert_cloud=true* && -n "${FAKE_CLOUD_PKI:-}" && "${FAKE_ANSIBLE_RC:-0}" == 0 ]]; then
+  cp "$FAKE_CLOUD_PKI/cloud.crt" "$FAKE_CLOUD_PKI/cloud.key" "$FAKE_PKI/"
+  chmod 644 "$FAKE_PKI/cloud.key"
 fi
 exit "${FAKE_ANSIBLE_RC:-0}"
 EOF
@@ -3587,6 +3598,302 @@ test_docs_recreate_app() {
   grep -qF 'stop_host_libvirt` (root)' "${d}/lab.sh.md" && grep -qF 'Usa root no `start`' "${d}/lab.sh.md" \
     && grep -qF 'sudo systemctl start libvirtd.socket virtlogd.socket' "${d}/lab.sh.md" \
     || fail "lab.sh.md sem o passo do libvirt, o uso de root ou o rollback"
+}
+
+# ---------------------------------------------------------------- lab.sh cert cloud (spec cloud-https)
+
+# Certificado do Horizon (CN cloud, SAN cloud + horizon) assinado pela CA de <dir>; grava em <saida>.
+cert_gera_cloud() {
+  local dir="$1" saida="$2" dias="${3:-825}"
+  mkdir -p "${saida}"
+  "${REAL_OPENSSL}" req -newkey rsa:2048 -nodes -keyout "${saida}/cloud.key" -out "${saida}/cloud.csr" \
+    -subj "/CN=cloud" 2>/dev/null
+  printf 'subjectAltName=DNS:cloud.larcerto.com.br,DNS:horizon.larcerto.com.br\n' >"${saida}/ext.cnf"
+  "${REAL_OPENSSL}" x509 -req -in "${saida}/cloud.csr" -CA "${dir}/ca.crt" -CAkey "${dir}/ca.key" \
+    -CAcreateserial -days "${dias}" -extfile "${saida}/ext.cnf" -out "${saida}/cloud.crt" 2>/dev/null
+  rm -f "${saida}/cloud.csr" "${saida}/ext.cnf" "${dir}/ca.srl"
+}
+
+# cert_sandbox + /etc/kolla falso, install que grava de verdade (pelo sudo falso), chown so registrado
+# e grep real (o sudo falso so executa comandos do $T/bin).
+cert_cloud_sandbox() {
+  cert_sandbox
+  export KOLLA_NODE_CONFIG="${T}/etc-kolla"
+  mkdir -p "${KOLLA_NODE_CONFIG}/haproxy/services.d"
+  export FAKE_CLOUD_PKI="${T}/cloud-pki"
+  cert_gera_cloud "${FAKE_PKI}" "${FAKE_CLOUD_PKI}"
+  local real_install real_grep
+  real_install="$(command -v install)"
+  real_grep="$(command -v grep)"
+  fake install 'echo "install $*" >>"$FAKE_LOG"; exec "'"${real_install}"'" "$@"'
+  fake chown 'echo "chown $*" >>"$FAKE_LOG"'
+  fake grep 'exec "'"${real_grep}"'" "$@"'
+}
+
+test_cert_cloud_issues() {
+  cert_cloud_sandbox
+  run_lab cert cloud
+  expect_rc 0 || return 1
+  grep -qx 'ansible-playbook site.yml --limit ca -e cert_cloud=true cwd=ansible' "${T}/log" \
+    || fail "chamada do ansible do cloud" || return 1
+  grep -qx 'Horizon (cloud): emitido' "${T}/out" || fail "sem emitido" || return 1
+  [[ "$(stat -c %a "${FAKE_PKI}/cloud.key")" == 600 ]] || fail "cloud.key sem modo 600" || return 1
+}
+
+test_cert_cloud_already_there() {
+  cert_cloud_sandbox
+  cp "${FAKE_CLOUD_PKI}/cloud.crt" "${FAKE_CLOUD_PKI}/cloud.key" "${FAKE_PKI}/"
+  run_lab cert cloud
+  expect_rc 0 || return 1
+  grep -qx 'Horizon (cloud): ja existia' "${T}/out" || fail "sem ja existia" || return 1
+  if grep -q ansible-playbook "${T}/log"; then fail "chamou o ansible com cloud.crt valido" || return 1; fi
+}
+
+test_cert_cloud_other_ca_reissues() {
+  cert_cloud_sandbox
+  cert_gera_pki "${T}/outra" 825
+  cert_gera_cloud "${T}/outra" "${T}/outra-cloud"
+  cp "${T}/outra-cloud/cloud.crt" "${T}/outra-cloud/cloud.key" "${FAKE_PKI}/"
+  run_lab cert cloud
+  expect_rc 0 || return 1
+  grep -qF 'cert_cloud=true' "${T}/log" || fail "cloud.crt de outra CA nao foi reemitido" || return 1
+  "${REAL_OPENSSL}" verify -CAfile "${FAKE_PKI}/ca.crt" "${FAKE_PKI}/cloud.crt" >/dev/null 2>&1 \
+    || fail "cloud.crt final nao confere com a CA" || return 1
+}
+
+test_cert_cloud_without_hosts() {
+  cert_cloud_sandbox
+  rm -f "${T}/project/ansible/inventory/hosts.ini"
+  run_lab cert cloud
+  expect_rc 1 || return 1
+  grep -qxF "Falta: ${T}/project/ansible/inventory/hosts.ini -> ./project/lab.sh install-app (o inventario sai do Terraform)" "${T}/err" \
+    || fail "sem a mensagem exata do hosts.ini" || return 1
+  if grep -q ansible-playbook "${T}/log"; then fail "chamou o ansible sem inventario" || return 1; fi
+}
+
+test_cert_cloud_without_ca_key() {
+  cert_cloud_sandbox
+  rm -f "${FAKE_PKI}/ca.key"
+  run_lab cert cloud
+  expect_rc 1 || return 1
+  grep -qxF "Falta: ${FAKE_PKI}/ca.key -> ./project/lab.sh install-app --from nuvem" "${T}/err" \
+    || fail "sem a mensagem exata do ca.key" || return 1
+  if grep -q ansible-playbook "${T}/log"; then fail "chamou o ansible sem ca.key" || return 1; fi
+}
+
+test_cert_cloud_ansible_fails() {
+  cert_cloud_sandbox
+  FAKE_ANSIBLE_RC=7 run_lab cert cloud
+  expect_rc 7 || return 1
+  grep -qx 'FALHOU: cert cloud (ansible), codigo 7' "${T}/err" || fail "mensagem de falha" || return 1
+  [[ ! -e "${KOLLA_NODE_CONFIG}/haproxy/haproxy.pem" ]] || fail "gravou o .pem com o ansible falhando" || return 1
+  if grep -q 'docker restart' "${T}/log"; then fail "reiniciou o haproxy com o ansible falhando" || return 1; fi
+}
+
+test_cert_cloud_writes_pem() {
+  cert_cloud_sandbox
+  local pem="${KOLLA_NODE_CONFIG}/haproxy/haproxy.pem"
+  run_lab cert cloud
+  expect_rc 0 || return 1
+  cat "${FAKE_PKI}/cloud.crt" "${FAKE_PKI}/ca.crt" "${FAKE_PKI}/cloud.key" >"${T}/esperado.pem"
+  cmp -s "${T}/esperado.pem" "${pem}" || fail ".pem nao e cert + CA + chave" || return 1
+  [[ "$(stat -c %a "${pem}")" == 600 ]] || fail ".pem sem modo 600" || return 1
+  grep -qx "sudo install -D -m 600 .* ${pem}" "${T}/log" || fail "install sem run_as_root" || return 1
+  grep -qx "chown root:root ${pem}" "${T}/log" || fail "sem chown root:root" || return 1
+  [[ -z "$(find "${TMPDIR}" -type f)" ]] || fail "temporario com a chave ficou para tras" || return 1
+}
+
+# Sem o frontend (antes do primeiro deploy): grava o .pem, nao reinicia (o deploy reinicia) e pede o deploy.
+test_cert_cloud_frontend_missing() {
+  cert_cloud_sandbox
+  : >"${KOLLA_NODE_CONFIG}/haproxy/services.d/horizon-https.cfg"
+  run_lab cert cloud
+  expect_rc 0 || return 1
+  grep -qx 'Falta o frontend 443 do Horizon: rode ./project/lab.sh deploy uma vez' "${T}/out" || fail "sem o aviso do deploy" || return 1
+  if grep -q 'docker restart' "${T}/log"; then fail "reiniciou o haproxy sem o frontend" || return 1; fi
+  [[ -s "${KOLLA_NODE_CONFIG}/haproxy/haproxy.pem" ]] || fail "nao gravou o .pem" || return 1
+}
+
+test_cert_cloud_frontend_ready() {
+  cert_cloud_sandbox
+  printf 'frontend horizon_https_front\n' >"${KOLLA_NODE_CONFIG}/haproxy/services.d/horizon-https.cfg"
+  run_lab cert cloud
+  expect_rc 0 || return 1
+  grep -qx 'docker restart haproxy' "${T}/log" || fail "nao reiniciou o haproxy" || return 1
+  grep -qx 'haproxy reiniciado' "${T}/out" || fail "sem haproxy reiniciado" || return 1
+  grep -qx 'Pronto: https://cloud.larcerto.com.br' "${T}/out" || fail "sem o endereco https" || return 1
+  if grep -qF 'deploy uma vez' "${T}/out"; then fail "pediu deploy com o frontend pronto" || return 1; fi
+  # /etc/kolla/haproxy e 0770 root no host: sem root o grep nunca acharia o frontend
+  grep -qx "sudo grep -q horizon_https_front ${KOLLA_NODE_CONFIG}/haproxy/services.d/horizon-https.cfg" "${T}/log" \
+    || fail "grep do frontend sem run_as_root" || return 1
+}
+
+test_cert_cloud_restart_fails() {
+  cert_cloud_sandbox
+  printf 'frontend horizon_https_front\n' >"${KOLLA_NODE_CONFIG}/haproxy/services.d/horizon-https.cfg"
+  fake docker 'echo "docker $*" >>"$FAKE_LOG"; [[ "$1" == restart ]] && exit 5; exit 0'
+  run_lab cert cloud
+  expect_rc 5 || return 1
+  grep -qx 'FALHOU: docker restart haproxy, codigo 5' "${T}/err" || fail "sem a mensagem do restart" || return 1
+}
+
+# Chave que nao e do par do cloud.crt: reemite.
+test_cert_cloud_wrong_key_reissues() {
+  cert_cloud_sandbox
+  cert_gera_cloud "${FAKE_PKI}" "${T}/outro-par"
+  cp "${FAKE_CLOUD_PKI}/cloud.crt" "${FAKE_PKI}/"
+  cp "${T}/outro-par/cloud.key" "${FAKE_PKI}/"
+  run_lab cert cloud
+  expect_rc 0 || return 1
+  grep -qF 'cert_cloud=true' "${T}/log" || fail "chave de outro par nao reemitiu" || return 1
+}
+
+# cloud.crt vencido (mesma CA e mesmo par): reemite. O openssl falso responde "vencido" ao -checkend.
+test_cert_cloud_expired_reissues() {
+  cert_cloud_sandbox
+  cp "${FAKE_CLOUD_PKI}/cloud.crt" "${FAKE_CLOUD_PKI}/cloud.key" "${FAKE_PKI}/"
+  fake openssl '
+if [[ "$1" == x509 && " $* " == *" -checkend 0 "* ]]; then exit 1; fi
+exec "'"${REAL_OPENSSL}"'" "$@"'
+  run_lab cert cloud
+  # o fetch falso traz o mesmo certificado, que segue "vencido": a checagem final deve recusar
+  expect_rc 2 || return 1
+  grep -qF 'cert_cloud=true' "${T}/log" || fail "cloud.crt vencido nao reemitiu" || return 1
+}
+
+test_cert_cloud_status_chain_invalid() {
+  cert_cloud_sandbox
+  cert_gera_pki "${T}/outra" 825
+  cert_gera_cloud "${T}/outra" "${T}/outra-cloud"
+  cp "${T}/outra-cloud/cloud.crt" "${T}/outra-cloud/cloud.key" "${FAKE_PKI}/"
+  FAKE_SERVED_CLOUD_PEM="${FAKE_PKI}/cloud.crt" run_lab cert status
+  expect_rc 2 || return 1
+  grep -qF 'cloud.crt: verification failed' "${T}/out" || fail "verify do cloud nao falhou" || return 1
+}
+
+test_cert_cloud_status_expired() {
+  cert_cloud_sandbox
+  cp "${FAKE_CLOUD_PKI}/cloud.crt" "${FAKE_CLOUD_PKI}/cloud.key" "${FAKE_PKI}/"
+  cert_gera_cloud "${FAKE_PKI}" "${T}/curto" 10
+  cp "${T}/curto/cloud.crt" "${T}/curto/cloud.key" "${FAKE_PKI}/"
+  # daqui a 100 dias: o wildcard (825) vale, o cloud (10) venceu
+  CERT_NOW=$(( $(date +%s) + 100 * 86400 )) FAKE_SERVED_CLOUD_PEM="${FAKE_PKI}/cloud.crt" run_lab cert status
+  expect_rc 2 || return 1
+  grep -qx '  servido: igual' "${T}/out" || fail "servido deveria ser igual" || return 1
+}
+
+test_cert_cloud_new_ca_reminder() {
+  cert_sandbox
+  local novo="${T}/nova"
+  cert_gera_pki "${novo}" 825
+  export FAKE_NEW_PKI="${novo}"
+  run_lab cert renew --new-ca --yes </dev/null
+  expect_rc 0 || return 1
+  grep -qx 'Reemita o do Horizon: ./project/lab.sh cert cloud' "${T}/out" || fail "sem o lembrete do cloud" || return 1
+}
+
+test_cert_cloud_status_ok() {
+  cert_cloud_sandbox
+  cp "${FAKE_CLOUD_PKI}/cloud.crt" "${FAKE_CLOUD_PKI}/cloud.key" "${FAKE_PKI}/"
+  FAKE_SERVED_CLOUD_PEM="${FAKE_PKI}/cloud.crt" run_lab cert status
+  expect_rc 0 || return 1
+  grep -qx 'Horizon (cloud): CN=cloud' "${T}/out" || fail "CN do cloud" || return 1
+  grep -qF 'SAN: DNS:cloud.larcerto.com.br, DNS:horizon.larcerto.com.br' "${T}/out" || fail "SAN do cloud" || return 1
+  grep -qE '^  openssl verify: .*cloud.crt: OK$' "${T}/out" || fail "verify do cloud" || return 1
+  grep -qx '  servido: igual' "${T}/out" || fail "servido do cloud" || return 1
+}
+
+test_cert_cloud_status_served_different() {
+  cert_cloud_sandbox
+  cp "${FAKE_CLOUD_PKI}/cloud.crt" "${FAKE_CLOUD_PKI}/cloud.key" "${FAKE_PKI}/"
+  cert_gera_cloud "${FAKE_PKI}" "${T}/outro-cloud"
+  FAKE_SERVED_CLOUD_PEM="${T}/outro-cloud/cloud.crt" run_lab cert status
+  expect_rc 2 || return 1
+  grep -qx '  servido: diferente' "${T}/out" || fail "servido diferente do cloud" || return 1
+}
+
+test_cert_cloud_status_unreachable() {
+  cert_cloud_sandbox
+  cp "${FAKE_CLOUD_PKI}/cloud.crt" "${FAKE_CLOUD_PKI}/cloud.key" "${FAKE_PKI}/"
+  run_lab cert status
+  expect_rc 0 || return 1
+  grep -qx '  servido: inacessivel' "${T}/out" || fail "cloud sem resposta" || return 1
+}
+
+test_cert_cloud_status_not_issued() {
+  cert_sandbox
+  run_lab cert status
+  expect_rc 0 || return 1
+  grep -qx 'Horizon (cloud): nao emitido (./project/lab.sh cert cloud)' "${T}/out" || fail "sem nao emitido" || return 1
+}
+
+test_cert_cloud_trust_message() {
+  cert_trust_sandbox
+  run_lab cert trust
+  expect_rc 0 || return 1
+  grep -qF 'https://larcerto.com.br' "${T}/out" || fail "sem o site" || return 1
+  grep -qF 'https://cloud.larcerto.com.br' "${T}/out" || fail "sem o Horizon" || return 1
+}
+
+# So o texto do ramo cert_cloud do papel ca (a execucao real e o C7, na nuvem).
+test_cert_cloud_role_branch() {
+  local f="${PROJECT_DIR}/ansible/roles/ca/tasks/main.yml" bloco
+  grep -q 'cert_cloud | default(false) | bool' "${f}" || fail "ramo cert_cloud sem padrao desligado" || return 1
+  bloco="$(sed -n '/Certificado do Horizon (cert_cloud=true/,/^- name: Dono dos arquivos da CA/p' "${f}")"
+  grep -qF -- '--subject-alt-name="DNS:cloud.{{ domain }},DNS:horizon.{{ domain }}"' <<<"${bloco}" || fail "SAN do cloud" || return 1
+  grep -qF 'build-server-full cloud nopass' <<<"${bloco}" || fail "sem build-server-full cloud" || return 1
+  grep -qF 'openssl verify -CAfile pki/ca.crt pki/issued/cloud.crt' <<<"${bloco}" || fail "sem verify do cloud" || return 1
+  grep -qF '["issued/cloud.crt", "private/cloud.key"]' <<<"${bloco}" || fail "sem fetch do cloud" || return 1
+  if grep -qE 'ca\.key|ca\.crt"|cert_name' <<<"$(grep -v 'pki/ca.crt' <<<"${bloco}")"; then
+    fail "ramo cloud mexe na CA ou no wildcard" || return 1
+  fi
+  grep -qF '"cloud.crt", "cloud.key"]' "${f}" || fail "ca_new nao apaga o cloud local" || return 1
+}
+
+# Renderiza o template do frontend com o Ansible do venv, como o kolla-ansible faz.
+test_cloud_https_frontend_template() {
+  local ansible="${HOME}/venvs/kolla/bin/ansible" tpl="${PROJECT_DIR}/kolla-config/config/haproxy/services.d/horizon-https.cfg"
+  [[ -x "${ansible}" ]] || { fail "sem ${ansible}"; return 1; }
+  mkdir -p "${T}/nc/haproxy"
+  local render='msg={{ lookup("ansible.builtin.template", "'"${tpl}"'") }}'
+  ANSIBLE_LOCALHOST_WARNING=false "${ansible}" localhost -c local -m ansible.builtin.debug -a "${render}" \
+    -e node_config_directory="${T}/nc" -e kolla_internal_vip_address=192.168.1.250 >"${T}/out" 2>"${T}/err"
+  if grep -qF 'frontend' "${T}/out"; then fail "frontend sem o .pem" || return 1; fi
+  : >"${T}/nc/haproxy/haproxy.pem"
+  ANSIBLE_LOCALHOST_WARNING=false "${ansible}" localhost -c local -m ansible.builtin.debug -a "${render}" \
+    -e node_config_directory="${T}/nc" -e kolla_internal_vip_address=192.168.1.250 >"${T}/out" 2>"${T}/err"
+  grep -qF 'bind 192.168.1.250:443 ssl crt /etc/haproxy/certificates/haproxy.pem' "${T}/out" || fail "bind 443" || return 1
+  grep -qF 'default_backend horizon_back' "${T}/out" || fail "backend do Horizon" || return 1
+  grep -qF 'X-Forwarded-Proto https' "${T}/out" || fail "X-Forwarded-Proto" || return 1
+}
+
+test_cloud_https_horizon_settings() {
+  local f="${PROJECT_DIR}/kolla-config/config/horizon/_9999-custom-settings.py" g="${PROJECT_DIR}/kolla-config/globals.yml"
+  grep -qxF "SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')" "${f}" || fail "sem SECURE_PROXY_SSL_HEADER" || return 1
+  grep -qxF "DEFAULT_THEME = 'lux'" "${f}" || fail "perdeu o tema" || return 1
+  python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "${f}" || fail "settings nao e Python valido" || return 1
+  if grep -qE '^kolla_enable_tls_(internal|external):' "${g}"; then fail "globals.yml ligou TLS do Kolla" || return 1; fi
+}
+
+test_cloud_https_cloud_check() {
+  local f="${PROJECT_DIR}/tests/cloud-checks.sh" corpo
+  corpo="$(sed -n '/^check_https_cloud()/,/^}/p' "${f}")"
+  grep -qF -- '--cacert "${PKI}/ca.crt"' <<<"${corpo}" || fail "sem --cacert" || return 1
+  grep -qF -- '--resolve "cloud.${DOMAIN}:443:192.168.1.250"' <<<"${corpo}" || fail "sem --resolve" || return 1
+  grep -qF '/auth/login/' <<<"${corpo}" || fail "sem /auth/login/" || return 1
+  if grep -E '^ALL=' "${f}" | grep -qw https_cloud; then fail "https_cloud na lista padrao" || return 1; fi
+}
+
+test_cloud_https_docs() {
+  local d
+  for d in docs/nuvem-larcerto.md docs/lab.sh.md README.md; do
+    grep -qF 'cert cloud' "${PROJECT_DIR}/${d}" || fail "${d} sem cert cloud" || return 1
+    grep -qF 'https://cloud.larcerto.com.br' "${PROJECT_DIR}/${d}" || fail "${d} sem https://cloud.larcerto.com.br" || return 1
+  done
+  setup_sandbox
+  run_lab help
+  grep -qF 'trust | cloud' "${T}/out" || fail "help sem cert cloud" || return 1
+  grep -qF 'https://cloud.larcerto.com.br' "${T}/out" || fail "help sem o endereco" || return 1
 }
 
 # ---------------------------------------------------------------- runner

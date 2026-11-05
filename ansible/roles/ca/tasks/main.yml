@@ -31,7 +31,7 @@
       ansible.builtin.file:
         path: "{{ pki_local_dir }}/{{ item }}"
         state: absent
-      loop: ["ca.crt", "ca.key", "{{ cert_name }}.crt", "{{ cert_name }}.key"]
+      loop: ["ca.crt", "ca.key", "{{ cert_name }}.crt", "{{ cert_name }}.key", "cloud.crt", "cloud.key"]
       delegate_to: localhost
       become: false
 
@@ -129,6 +129,57 @@
   args:
     chdir: "{{ easyrsa_dir }}"
   changed_when: false
+
+# cert_cloud (lab.sh cert cloud): certificado do Horizon (cloud e o apelido horizon), assinado pela mesma
+# CA. O lab.sh so chama este ramo quando files/pki/cloud.crt falta ou nao confere com a CA, entao o
+# certificado antigo da VM vai para pki/renewed-cloud-<data>/ e um novo e emitido.
+- name: Certificado do Horizon (cert_cloud=true, so pelo lab.sh cert cloud)
+  when: cert_cloud | default(false) | bool
+  block:
+    - name: Carimbo da emissao do cloud
+      ansible.builtin.set_fact:
+        cloud_stamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+
+    - name: Pasta do certificado cloud antigo
+      ansible.builtin.file:
+        path: "{{ easyrsa_dir }}/pki/renewed-cloud-{{ cloud_stamp }}"
+        state: directory
+        mode: "0700"
+
+    - name: Guardar certificado, chave e pedido cloud antigos (so se existirem)
+      ansible.builtin.command: mv {{ easyrsa_dir }}/pki/{{ item }} {{ easyrsa_dir }}/pki/renewed-cloud-{{ cloud_stamp }}/
+      args:
+        removes: "{{ easyrsa_dir }}/pki/{{ item }}"
+      loop: ["issued/cloud.crt", "private/cloud.key", "reqs/cloud.req"]
+
+    - name: Certificado cloud.{{ domain }} + horizon.{{ domain }}
+      ansible.builtin.command: >-
+        ./easyrsa --batch
+        --subject-alt-name="DNS:cloud.{{ domain }},DNS:horizon.{{ domain }}"
+        build-server-full cloud nopass
+      args:
+        chdir: "{{ easyrsa_dir }}"
+        creates: "{{ easyrsa_dir }}/pki/issued/cloud.crt"
+
+    - name: Verificar o certificado cloud contra a CA
+      ansible.builtin.command: openssl verify -CAfile pki/ca.crt pki/issued/cloud.crt
+      args:
+        chdir: "{{ easyrsa_dir }}"
+      changed_when: false
+
+    - name: Salvar o certificado cloud no host (files/pki, fora do git)
+      ansible.builtin.fetch:
+        src: "{{ easyrsa_dir }}/pki/{{ item }}"
+        dest: "{{ pki_local_dir }}/"
+        flat: true
+      loop: ["issued/cloud.crt", "private/cloud.key"]
+
+    - name: Chave do cloud salva no host so para o dono
+      ansible.builtin.file:
+        path: "{{ pki_local_dir }}/cloud.key"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
 
 - name: Dono dos arquivos da CA
   ansible.builtin.file:

@@ -47,10 +47,12 @@ Comandos:
   recreate-app   Apaga e recria as VMs da app e roda os checks; mostra o tempo [--yes]
                  (etapas: prereqs start destroy terraform nuvem app dns-host checks)
   vms            VMs do projeto larcerto: status, IP privado, floating IP e linha de ssh (so leitura)
-  cert           Certificado da LarCerto: status (padrão) | renew [--new-ca [--yes]] | trust
-                 status: validade e se o web serve o mesmo certificado
+  cert           Certificado da LarCerto: status (padrão) | renew [--new-ca [--yes]] | trust | cloud
+                 status: validade e se o web (e o Horizon) serve o mesmo certificado
                  renew: emite de novo na VM ca (mesma CA); --new-ca troca a CA com confirmação e cópia
                  trust: importa a CA nos bancos NSS do navegador (sem sudo)
+                 cloud: certificado do Horizon (https://cloud.larcerto.com.br), emitido na VM ca e
+                        servido pelo HAProxy do Kolla na 443 (root; depois, uma vez: deploy)
   deploy | bootstrap | prechecks | post-deploy | all | stop-kolla
                  Comandos Kolla (scripts/kolla/kolla.sh):
                  (deploy / all / post-deploy: depois corre fix-wired e ext-net automaticamente)

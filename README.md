@@ -178,6 +178,7 @@ Atalho (bootstrap + prechecks + deploy + fix-wired no fim):
 | Deploy falha em horizon `409 Conflict` (nome já em uso) | `./project/lab.sh fix-horizon` → `./project/lab.sh deploy` |
 | Horizon já abre no browser | Ignora o 409; usa o login |
 | Navegador não confia no HTTPS da LarCerto, ou o certificado venceu / o `web` serve outro | `./project/lab.sh cert` (ver); `./project/lab.sh cert trust` (confiar na CA); `./project/lab.sh cert renew` (emitir de novo) |
+| Horizon só em HTTP; quero `https://cloud.larcerto.com.br` | `./project/lab.sh cert cloud` e, uma vez, `./project/lab.sh deploy` ([guia](docs/nuvem-larcerto.md#https-do-horizon-httpscloudlarcertocombr)) |
 | VMs sem IP, Ansible com `No route to host` no `Esperar SSH` | AppArmor do `dnsmasq`: correção e rollback em [docs/kolla-ansible-quickstart.md](docs/kolla-ansible-quickstart.md#vms-sem-ip-apparmor-bloqueando-o-dnsmasq-do-neutron) |
 
 Ajuda: `./project/lab.sh help`
