@@ -1,14 +1,83 @@
 ---
-# Apache + PHP 8.4 (M05/M10; PHP do ppa:ondrej/php, porque o Ubuntu 22.04 so traz o 8.1) com HTTPS do
+# Apache + PHP 8.4 (M05/M10; PHP do PPA ondrej/php, porque o Ubuntu 22.04 so traz o 8.1) com HTTPS do
 # certificado wildcard da CA LarCerto. App: se project/app/public/index.php existir,
 # public/, backend/ e frontend/views/ sao publicados com as mesmas configs de Apache e PHP do
 # Compose; senao vai a pagina provisoria, que testa o banco.
 
+# O PPA entra como o repositorio da MariaDB no papel db: chave do keyserver + linha deb com signed-by.
+# O "repo: ppa:ondrej/php" consultava a API do Launchpad, que oscila e derrubava o playbook por timeout.
+- name: Pasta de chaves do apt
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+# A chave baixada vai para um temporario e so entra em /etc/apt/keyrings depois de conferida. O keyserver
+# devolve o mesmo texto com cabecalhos em ordem diferente; o binario do --dearmor nao muda (idempotente).
+- name: Chave do PPA ondrej/php (keyserver, pelo fingerprint), num temporario
+  ansible.builtin.get_url:
+    url: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x{{ php_ppa_fingerprint }}"
+    dest: /root/ondrej-php.asc
+    mode: "0600"
+    force: true
+    timeout: 30
+  register: php_ppa_key
+  retries: 5
+  delay: 10
+  until: php_ppa_key is succeeded
+  changed_when: false
+
+- name: Conferir o fingerprint da chave do PPA (exatamente uma chave, a esperada)
+  ansible.builtin.command: gpg --show-keys --with-colons /root/ondrej-php.asc
+  register: php_ppa_fpr
+  changed_when: false
+  failed_when: >-
+    php_ppa_fpr.rc != 0 or
+    (php_ppa_fpr.stdout_lines | select('match', '^fpr:') | map('split', ':') | map(attribute=9) | list) != [php_ppa_fingerprint]
+
+- name: Converter a chave conferida para o formato binario do apt
+  ansible.builtin.command: gpg --batch --yes --dearmor -o /root/ondrej-php.gpg /root/ondrej-php.asc
+  changed_when: false
+
+- name: Instalar a chave do PPA em /etc/apt/keyrings
+  ansible.builtin.copy:
+    src: /root/ondrej-php.gpg
+    dest: /etc/apt/keyrings/ondrej-php.gpg
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Tirar os .list antigos do PPA ondrej/php (o apt recusa Signed-By diferente para a mesma origem)
+  ansible.builtin.file:
+    path: "/etc/apt/sources.list.d/{{ item }}"
+    state: absent
+  loop:
+    - "ppa_ondrej_php_{{ ansible_distribution_release }}.list"
+    - "ondrej-ubuntu-php-{{ ansible_distribution_release }}.list"
+
+# Arquivo inteiro (copy), nao uma linha acrescentada: linhas de versoes anteriores somem junto.
 - name: PPA ondrej/php (PHP 8.4 no Ubuntu 22.04, que so traz o 8.1)
-  ansible.builtin.apt_repository:
-    repo: ppa:ondrej/php
-    state: present
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/ondrej-php.list
+    content: "deb [signed-by=/etc/apt/keyrings/ondrej-php.gpg] https://ppa.launchpadcontent.net/ondrej/php/ubuntu {{ ansible_distribution_release }} main\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Tirar a chave em texto da versao anterior
+  ansible.builtin.file:
+    path: /etc/apt/keyrings/ondrej-php.asc
+    state: absent
+
+- name: Atualizar o indice do apt com o PPA
+  ansible.builtin.apt:
     update_cache: true
+  register: php_ppa_repo
+  retries: 3
+  delay: 10
+  until: php_ppa_repo is succeeded
+  changed_when: false
 
 - name: Instalar Apache e PHP 8.4 com GD para as fotos (mesma versao e extensoes do Compose local)
   ansible.builtin.apt:

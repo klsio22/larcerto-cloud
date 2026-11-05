@@ -2282,8 +2282,46 @@ test_qa_playwright_version() {
 
 test_ansible_web_php84() {
   local r="${PROJECT_DIR}/ansible/roles/web/tasks/main.yml"
-  sed -n '/name: PPA ondrej\/php/,/^$/p' "${r}" | grep -qx '    repo: ppa:ondrej/php' \
-    && sed -n '/name: PPA ondrej\/php/,/^$/p' "${r}" | grep -qx '    state: present' || fail "PPA ondrej/php" || return 1
+  # PPA sem a API do Launchpad: chave do keyserver pelo fingerprint, conferida, e linha deb com signed-by
+  ! grep -q 'ppa:ondrej' <(grep -v '^ *#' "${r}") || fail "ainda usa ppa:ondrej (API do Launchpad)" || return 1
+  grep -qx 'php_ppa_fingerprint: 14AA40EC0831756756D7F66C4F4EA0AAE5267A6C' "${PROJECT_DIR}/ansible/roles/web/defaults/main.yml" \
+    || fail "fingerprint do PPA ausente" || return 1
+  local chave fpr velho repo
+  chave="$(sed -n '/name: Chave do PPA ondrej\/php/,/^$/p' "${r}")"
+  grep -qF 'url: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x{{ php_ppa_fingerprint }}"' <<<"${chave}" \
+    && grep -qx '    dest: /root/ondrej-php.asc' <<<"${chave}" && grep -qx '  retries: 5' <<<"${chave}" \
+    && grep -qx '  until: php_ppa_key is succeeded' <<<"${chave}" || fail "chave do PPA sem keyserver/retries" || return 1
+  fpr="$(sed -n '/name: Conferir o fingerprint da chave do PPA/,/^$/p' "${r}")"
+  grep -qF 'gpg --show-keys --with-colons /root/ondrej-php.asc' <<<"${fpr}" \
+    && grep -qF "map(attribute=9) | list) != [php_ppa_fingerprint]" <<<"${fpr}" \
+    || fail "fingerprint nao conferido (exatamente uma chave)" || return 1
+  local inst
+  inst="$(sed -n '/name: Instalar a chave do PPA em \/etc\/apt\/keyrings/,/^$/p' "${r}")"
+  grep -qx '    src: /root/ondrej-php.gpg' <<<"${inst}" && grep -qx '    dest: /etc/apt/keyrings/ondrej-php.gpg' <<<"${inst}" \
+    && grep -qF 'gpg --batch --yes --dearmor -o /root/ondrej-php.gpg /root/ondrej-php.asc' "${r}" \
+    || fail "chave nao instalada em binario depois de conferida" || return 1
+  velho="$(sed -n '/name: Tirar os .list antigos do PPA ondrej\/php/,/^$/p' "${r}")"
+  grep -q 'state: absent' <<<"${velho}" && grep -qF 'ppa_ondrej_php_{{ ansible_distribution_release }}.list' <<<"${velho}" \
+    && grep -qF 'ondrej-ubuntu-php-{{ ansible_distribution_release }}.list' <<<"${velho}" || fail "nao apaga os .list antigos" || return 1
+  repo="$(sed -n '/name: PPA ondrej\/php/,/^$/p' "${r}")"
+  grep -qx '  ansible.builtin.copy:' <<<"${repo}" && grep -qx '    dest: /etc/apt/sources.list.d/ondrej-php.list' <<<"${repo}" \
+    && grep -qF 'content: "deb [signed-by=/etc/apt/keyrings/ondrej-php.gpg] https://ppa.launchpadcontent.net/ondrej/php/ubuntu {{ ansible_distribution_release }} main\n"' <<<"${repo}" \
+    || fail "PPA nao e o arquivo inteiro (copy) com signed-by" || return 1
+  ! grep -q 'apt_repository' <<<"$(sed -n '/name: Pasta de chaves do apt/,/name: Instalar Apache/p' "${r}")" || fail "PPA ainda via apt_repository (acrescenta linhas)" || return 1
+  local upd
+  upd="$(sed -n '/name: Atualizar o indice do apt com o PPA/,/^$/p' "${r}")"
+  grep -qx '    update_cache: true' <<<"${upd}" && grep -qx '  until: php_ppa_repo is succeeded' <<<"${upd}" || fail "apt update do PPA sem retries" || return 1
+  # ordem: chave -> fingerprint -> instalar -> .list antigos -> repo -> pacotes do PHP
+  local n1 n2 n2b n3 n4 n5
+  n2b="$(grep -n 'name: Instalar a chave do PPA' "${r}" | cut -d: -f1)"
+  n1="$(grep -n 'name: Chave do PPA ondrej/php' "${r}" | cut -d: -f1)"
+  n2="$(grep -n 'name: Conferir o fingerprint da chave do PPA' "${r}" | cut -d: -f1)"
+  n3="$(grep -n 'name: Tirar os .list antigos' "${r}" | cut -d: -f1)"
+  local n3b
+  n3b="$(grep -n 'name: PPA ondrej/php' "${r}" | cut -d: -f1)"
+  n4="$(grep -n 'name: Atualizar o indice do apt com o PPA' "${r}" | cut -d: -f1)"
+  n5="$(grep -n 'name: Instalar Apache e PHP 8.4' "${r}" | cut -d: -f1)"
+  [[ "${n1}" -lt "${n2}" && "${n2}" -lt "${n2b}" && "${n2b}" -lt "${n3}" && "${n3}" -lt "${n3b}" && "${n3b}" -lt "${n4}" && "${n4}" -lt "${n5}" ]] || fail "ordem das tarefas do PPA" || return 1
   grep -qF 'name: [apache2, php8.4, libapache2-mod-php8.4, php8.4-mysql, php8.4-gd]' "${r}" || fail "pacotes do PHP 8.4 + gd" || return 1
   ! grep -qE 'libapache2-mod-php[,\]]|php-mysql' "${r}" || fail "sobrou PHP generico (8.1)" || return 1
   local pub
@@ -2300,6 +2338,12 @@ test_ansible_web_php84() {
     && grep -qx '    mode: "0750"' <<<"${up}" || fail "pasta das fotos (www-data, 0750)" || return 1
   grep -q 'src: "{{ playbook_dir }}/../app/public/assets/logo.svg"' "${r}" || fail "provisoria sem o logo" || return 1
   [[ -f "${APP}/public/assets/logo.svg" ]] || fail "logo ausente"
+}
+
+test_ansible_force_handlers() {
+  grep -qx 'force_handlers = True' "${PROJECT_DIR}/ansible/ansible.cfg" || fail "ansible.cfg sem force_handlers = True" || return 1
+  [[ "$(sed -n '/^\[defaults\]/,/^\[/p' "${PROJECT_DIR}/ansible/ansible.cfg" | grep -cx 'force_handlers = True')" -eq 1 ]] \
+    || fail "force_handlers fora de [defaults]"
 }
 
 test_ansible_db_schema_seed() {
