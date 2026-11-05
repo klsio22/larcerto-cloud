@@ -118,7 +118,17 @@ Depois de recriar as VMs os IPs e as chaves de host mudam: se o `ssh` reclamar d
 ## Conferir
 
 ```bash
-bash project/tests/cloud-checks.sh     # dns_www, dns_cloud, dns_db_from_web, http_redirect, https_ok
+bash project/tests/cloud-checks.sh     # dns_www, dns_cloud, dns_coringa, dns_horizon, dns_db_from_web, http_redirect, https_ok
+```
+
+Nomes da zona `larcerto.com.br` (VM `dns`): `larcerto.com.br`, `www` e `web` vão para a web, `dns` e
+`ca` para as VMs delas, `db` para o IP privado do banco e `cloud` para o Horizon (`192.168.1.250`).
+`horizon.larcerto.com.br` é um apelido (`CNAME`) de `cloud`, e o registro coringa `*` manda qualquer
+outro nome (ex.: `qualquer.larcerto.com.br`) para a web, como o certificado wildcard `*.larcerto.com.br`.
+
+```bash
+resolvectl query qualquer.larcerto.com.br   # floating IP da web (coringa)
+resolvectl query horizon.larcerto.com.br    # cloud.larcerto.com.br -> 192.168.1.250 (CNAME)
 ```
 
 ## Recriar (demonstração / REQ25)

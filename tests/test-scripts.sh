@@ -611,6 +611,16 @@ test_dns_zone_records() {
   grep -q '^cloud_vip: 192.168.1.250$' "${PROJECT_DIR}/ansible/group_vars/all/main.yml" || fail "VIP errado"
 }
 
+test_dns_coringa() {
+  local z="${PROJECT_DIR}/ansible/roles/dns/templates/db.zone.j2" c="${PROJECT_DIR}/tests/cloud-checks.sh"
+  grep -qE "^\*\s+IN\s+A\s+\{\{ hostvars\[groups\['web'\]\[0\]\]\.ansible_host \}\}$" "${z}" || fail "zona sem o coringa para a web" || return 1
+  grep -qE '^horizon\s+IN\s+CNAME\s+cloud\.\{\{ domain \}\}\.$' "${z}" || fail "zona sem horizon CNAME cloud" || return 1
+  grep -qE '^ALL=\(.*\bdns_coringa\b.*\bdns_horizon\b' "${c}" && grep -q '^check_dns_coringa()' "${c}" && grep -q '^check_dns_horizon()' "${c}" \
+    || fail "cloud-checks sem dns_coringa/dns_horizon" || return 1
+  grep -qF 'qualquer.larcerto.com.br' "${PROJECT_DIR}/docs/nuvem-larcerto.md" && grep -qF 'horizon.larcerto.com.br' "${PROJECT_DIR}/docs/nuvem-larcerto.md" \
+    || fail "guia sem o coringa e o horizon"
+}
+
 test_ca_role_restores_pki() {
   local r="${PROJECT_DIR}/ansible/roles/ca/tasks/main.yml"
   grep -q 'path: "{{ pki_local_dir }}/ca.key"' "${r}" || fail "nao procura a CA salva" || return 1

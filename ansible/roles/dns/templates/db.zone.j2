@@ -17,3 +17,6 @@ dns     IN  A   {{ hostvars[groups['dns'][0]].ansible_host }}
 ca      IN  A   {{ hostvars[groups['ca'][0]].ansible_host }}
 db      IN  A   {{ private_ips.db }}
 cloud   IN  A   {{ cloud_vip }}
+horizon IN  CNAME cloud.{{ domain }}.
+; coringa: qualquer outro nome cai na web (os nomes acima continuam com o valor deles)
+*       IN  A   {{ hostvars[groups['web'][0]].ansible_host }}

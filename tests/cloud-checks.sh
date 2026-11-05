@@ -21,6 +21,16 @@ check_dns_cloud() {
   [[ "$(dig +short @"$(fip dns)" "cloud.${DOMAIN}")" == "192.168.1.250" ]]
 }
 
+# qualquer nome sem registro proprio cai na web (registro coringa)
+check_dns_coringa() {
+  [[ "$(dig +short @"$(fip dns)" "qualquer.${DOMAIN}")" == "$(fip web)" ]]
+}
+
+# horizon e apelido (CNAME) de cloud
+check_dns_horizon() {
+  [[ "$(dig +short @"$(fip dns)" "horizon.${DOMAIN}" | tr '\n' ' ')" == "cloud.${DOMAIN}. 192.168.1.250 " ]]
+}
+
 check_dns_db_from_web() {
   (cd "${PROJECT_DIR}/ansible" && "${ANSIBLE}" web -m ansible.builtin.command \
     -a "getent hosts db.${DOMAIN}" 2>/dev/null) | grep -q '10\.11\.12\.12'
@@ -82,7 +92,7 @@ check_seed_count() {
 
 [[ -f "${INVENTORY}" ]] || { echo "Sem ${INVENTORY}: rode terraform apply primeiro." >&2; exit 2; }
 
-ALL=(dns_www dns_cloud dns_db_from_web http_redirect https_ok php_version db_version_seed php_gd_uploads)
+ALL=(dns_www dns_cloud dns_coringa dns_horizon dns_db_from_web http_redirect https_ok php_version db_version_seed php_gd_uploads)
 selected=("$@")
 [[ "${#selected[@]}" -eq 0 ]] && selected=("${ALL[@]}")
 
