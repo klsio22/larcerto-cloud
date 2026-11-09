@@ -27,7 +27,7 @@ flowchart LR
 ```
 
 1. O aluno usa **`lab.sh`** (prep, bootstrap, deploy, status, fixes).
-2. Comandos Kolla (`bootstrap`, `prechecks`, `deploy`, `post-deploy`, `all`, `stop-kolla`) são executados por **`scripts/kolla/kolla.sh`**, sempre pelo `lab.sh`.
+2. Comandos Kolla (`bootstrap`, `prechecks`, `deploy`, `post-deploy`, `stop-kolla`) são executados por **`scripts/kolla/kolla.sh`**, sempre pelo `lab.sh`.
 3. O Kolla lê **`kolla-config/`** (`globals.yml`, `passwords.yml`).
 4. Após **`post-deploy`**, o Ansible gera `*-openrc.sh` e `clouds.yaml` para a CLI OpenStack.
 

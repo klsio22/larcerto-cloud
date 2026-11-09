@@ -1,4 +1,4 @@
-# Comandos Kolla (bootstrap, prechecks, deploy, post-deploy, all, stop-kolla) via kolla-ansible.
+# Comandos Kolla (bootstrap, prechecks, deploy, post-deploy, stop-kolla) via kolla-ansible.
 # Carregado pelo lab.sh; so define funcoes e variaveis. Sem o antigo wrapper na raiz.
 # shellcheck shell=bash
 
@@ -108,9 +108,8 @@ kolla_run() {
   case "${action}" in
     bootstrap) steps=(bootstrap-servers) ;;
     prechecks|deploy|post-deploy|stop) steps=("${action}") ;;
-    all) steps=(bootstrap-servers prechecks deploy) ;;
     *)
-      echo "Uso: ./project/lab.sh {all|bootstrap|prechecks|deploy|post-deploy|stop-kolla}" >&2
+      echo "Uso: ./project/lab.sh {bootstrap|prechecks|deploy|post-deploy|stop-kolla}" >&2
       exit 1
       ;;
   esac
@@ -133,7 +132,7 @@ cmd_kolla() {
   kolla_run "${action}"
   # Padrao do lab AIO: apos subir a nuvem, NIC de gestao fora do br-ex.
   case "${action}" in
-    deploy|all|post-deploy)
+    deploy|post-deploy)
       echo
       step "Padrao do lab: cabo (network_interface) fora do br-ex"
       if ! cmd_fix_wired; then

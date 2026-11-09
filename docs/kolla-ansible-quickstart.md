@@ -104,7 +104,9 @@ Para usar exatamente essa estrutura:
 ./project/lab.sh all
 ```
 
-Ou em etapas:
+Esse comando sobe o projeto inteiro (OpenStack, nuvem, app e HTTPS do Horizon) e continua de uma etapa com `./project/lab.sh all --from <etapa>`. Numa máquina nova, rode antes `./project/lab.sh bootstrap`.
+
+Só o OpenStack, em etapas:
 
 ```bash
 ./project/lab.sh bootstrap

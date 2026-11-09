@@ -6,6 +6,7 @@
 INSTALL_STEPS=(prereqs start bootstrap terraform nuvem app dns-host checks)
 START_APP_STEPS=(prereqs start vms dns-host checks)
 RECREATE_STEPS=(prereqs start destroy terraform nuvem app dns-host checks)
+ALL_STEPS=(prep prechecks deploy post-deploy prereqs start bootstrap terraform nuvem app dns-host checks cert-cloud deploy-https https-cloud)
 
 CLOUDS_YAML="${SCRIPT_DIR}/cloud/secrets/clouds.yaml"
 HOSTS_INI="${SCRIPT_DIR}/ansible/inventory/hosts.ini"
@@ -179,6 +180,35 @@ step_checks() {
   bash "${SCRIPT_DIR}/tests/cloud-checks.sh"
 }
 
+step_prep() {
+  cmd_prep
+}
+
+step_prechecks() {
+  cmd_kolla prechecks
+}
+
+step_deploy() {
+  cmd_kolla deploy
+}
+
+step_post_deploy() {
+  cmd_kolla post-deploy
+}
+
+step_cert_cloud() {
+  cert_main cloud
+}
+
+step_deploy_https() {
+  cmd_kolla deploy
+}
+
+step_https_cloud() {
+  wait_vip
+  bash "${SCRIPT_DIR}/tests/cloud-checks.sh" https_cloud
+}
+
 # Religa so as VMs SHUTOFF e espera as 4 ACTIVE.
 step_vms() {
   local vms=(dns ca db web) vm status pending
@@ -211,6 +241,14 @@ step_vms() {
 # Dica por etapa, mostrada no bloco de falha.
 step_hint() {
   case "$1" in
+    prep) echo "veja o erro acima; ./project/lab.sh status mostra a dummy0 e o OVS" ;;
+    prechecks) echo "veja qual checagem do Kolla falhou acima; numa maquina nova, rode antes ./project/lab.sh bootstrap" ;;
+    deploy) echo "veja a tarefa do Kolla que falhou acima; ./project/lab.sh status mostra o estado dos containers" ;;
+    post-deploy) echo "veja o erro do kolla-ansible post-deploy acima; ele gera o clouds.yaml do admin" ;;
+    prereqs) echo "corrija o que esta nas linhas Falta acima" ;;
+    cert-cloud) echo "veja o erro do cert cloud acima; ./project/lab.sh cert mostra o estado dos certificados" ;;
+    deploy-https) echo "veja a tarefa do Kolla que falhou acima; ./project/lab.sh status mostra o estado do haproxy e do Horizon" ;;
+    https-cloud) echo "o Horizon nao respondeu em https://cloud.larcerto.com.br; ./project/lab.sh cert compara o certificado servido" ;;
     start) echo "veja a saida do lab.sh start acima (se a API nao respondeu no VIP, espere uns segundos e continue); ./project/lab.sh status mostra o estado do Kolla" ;;
     bootstrap) echo "veja o erro do bootstrap acima; ele pula o que ja existe, entao repetir e seguro (./project/lab.sh status mostra o Kolla)" ;;
     destroy) echo "veja o erro do terraform destroy acima; repetir e seguro: ele so apaga o que ainda existe" ;;
@@ -246,10 +284,12 @@ run_steps() {
     if [[ "${rc}" -eq 0 ]]; then
       continue
     fi
-    if [[ "${step}" == prereqs ]]; then
+    if [[ "${step}" == prereqs && "${mode}" != all ]]; then
       return 1
     fi
-    if [[ "${mode}" == recreate && "${step}" == destroy ]]; then
+    if [[ "${mode}" == all ]]; then
+      cont="./project/lab.sh all --from ${step}"
+    elif [[ "${mode}" == recreate && "${step}" == destroy ]]; then
       cont="./project/lab.sh recreate-app"
     elif [[ "${mode}" == install || "${mode}" == recreate ]]; then
       cont="./project/lab.sh install-app --from ${step}"
@@ -285,6 +325,24 @@ install_app() {
   MODE=install
   run_steps install "${from}" "${INSTALL_STEPS[@]}"
   resumo_sucesso
+}
+
+run_all() {
+  local from="prep"
+  if [[ "${1:-}" == --from && $# -le 2 ]]; then
+    from="${2:-}"
+    if [[ -z "${from}" ]] || ! [[ " ${ALL_STEPS[*]} " == *" ${from} "* ]]; then
+      echo "Etapa desconhecida: '${from}'. Etapas validas: ${ALL_STEPS[*]}" >&2
+      return 1
+    fi
+  elif [[ $# -gt 0 ]]; then
+    echo "Uso: ./project/lab.sh all [--from <etapa>]" >&2
+    return 1
+  fi
+  MODE=install
+  run_steps all "${from}" "${ALL_STEPS[@]}"
+  resumo_sucesso
+  echo "Painel: https://${CERT_CLOUD_FQDN}"
 }
 
 start_app() {

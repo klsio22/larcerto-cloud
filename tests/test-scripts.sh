@@ -287,15 +287,12 @@ test_helpers_defined_once() {
 test_zorin_facts_generated_once() {
   echo 'ID=zorin' >"${OS_RELEASE}"
   export FORCE_UBUNTU_FACTS=true
-  run_kolla all
+  run_kolla deploy
   expect_rc 0 || return 1
   local n
   n="$(grep -c '^ansible .*-m setup' "${T}/log")"
   [[ "${n}" -eq 1 ]] || fail "setup chamado ${n} vezes" || return 1
-  local step
-  for step in bootstrap-servers prechecks deploy; do
-    grep -qE "^kolla ${step} .*-e @" "${T}/log" || fail "${step} sem -e @facts" || return 1
-  done
+  grep -qE "^kolla deploy .*-e @" "${T}/log" || fail "deploy sem -e @facts" || return 1
   n="$(grep '^kolla ' "${T}/log" | grep -oE -- '-e @[^ ]+' | sort -u | wc -l)"
   [[ "${n}" -eq 1 ]] || fail "esperado 1 arquivo de facts, obtido ${n}"
 }
@@ -3894,6 +3891,274 @@ test_cloud_https_docs() {
   run_lab help
   grep -qF 'trust | cloud' "${T}/out" || fail "help sem cert cloud" || return 1
   grep -qF 'https://cloud.larcerto.com.br' "${T}/out" || fail "help sem o endereco" || return 1
+}
+
+ALL_STEP_NAMES=(prep prechecks deploy post-deploy prereqs start bootstrap terraform nuvem app dns-host checks cert-cloud deploy-https https-cloud)
+
+all_sandbox() {
+  install_sandbox
+  unset FAKE_KOLLA_FAIL FAKE_KOLLA_FAIL_NTH
+  export FAKE_PKI="${T}/project/ansible/files/pki" KOLLA_NODE_CONFIG="${T}/etc-kolla"
+  mkdir -p "${KOLLA_NODE_CONFIG}/haproxy/services.d"
+  cert_gera_pki "${FAKE_PKI}" 825
+  cert_gera_cloud "${FAKE_PKI}" "${FAKE_PKI}"
+  local real_install real_grep
+  real_install="$(command -v install)"
+  real_grep="$(command -v grep)"
+  fake install 'echo "install $*" >>"$FAKE_LOG"; exec "'"${real_install}"'" "$@"'
+  fake chown 'echo "chown $*" >>"$FAKE_LOG"'
+  fake grep 'exec "'"${real_grep}"'" "$@"'
+  cat >"${T}/venv/bin/kolla-ansible" <<EOF
+#!/usr/bin/env bash
+echo "kolla \$*" >>"\$FAKE_LOG"
+echo "kolla-tmp \$(ls -A "\${TMPDIR}" | wc -l)" >>"\$FAKE_LOG"
+if [[ "\$1" == "\${FAKE_KOLLA_FAIL:-}" ]]; then
+  count="${T}/kolla-count-\$1"
+  n=\$(( \$(cat "\${count}" 2>/dev/null || echo 0) + 1 ))
+  echo "\${n}" >"\${count}"
+  [[ "\${n}" -eq "\${FAKE_KOLLA_FAIL_NTH:-1}" ]] && exit 7
+fi
+exit 0
+EOF
+  chmod +x "${T}/venv/bin/kolla-ansible"
+  cat >"${T}/project/tests/cloud-checks.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "checks $*" >>"$FAKE_LOG"
+if [[ $# -eq 0 && "${FAKE_FAIL:-}" == checks ]]; then exit "${FAKE_RC:-7}"; fi
+if [[ "$1" == https_cloud && "${FAKE_FAIL:-}" == https-cloud ]]; then exit "${FAKE_RC:-7}"; fi
+exit 0
+EOF
+  chmod +x "${T}/project/tests/cloud-checks.sh"
+}
+
+all_step_section() {
+  awk -v step="$1" '
+    /^==> \[[0-9]+\/15\] / { on = ($3 == step); next }
+    on { print }
+  ' "${T}/out"
+}
+
+test_all_runs_15_steps_in_order() {
+  all_sandbox
+  run_lab all
+  expect_rc 0 || return 1
+  local i=0 name want="" got
+  for name in "${ALL_STEP_NAMES[@]}"; do
+    i=$((i + 1))
+    want+="==> [${i}/15] ${name}"$'\n'
+  done
+  got="$(grep -oE '^==> \[[0-9]+/15\] [a-z-]+' "${T}/out")"
+  [[ "${got}" == "${want%$'\n'}" ]] || fail "ordem das etapas diferente: ${got}" || return 1
+  local pem last_deploy https
+  pem="$(grep -n "install -D -m 600 .*haproxy/haproxy.pem" "${T}/log" | head -1 | cut -d: -f1)"
+  last_deploy="$(grep -n '^kolla deploy ' "${T}/log" | tail -1 | cut -d: -f1)"
+  https="$(grep -n '^checks https_cloud$' "${T}/log" | cut -d: -f1)"
+  [[ -n "${pem}" && -n "${last_deploy}" && -n "${https}" ]] || fail "falta .pem, deploy ou https_cloud no log" || return 1
+  [[ "${pem}" -lt "${last_deploy}" ]] || fail ".pem depois do ultimo deploy" || return 1
+  [[ "${last_deploy}" -lt "${https}" ]] || fail "https_cloud antes do ultimo deploy" || return 1
+}
+
+test_all_never_destroys_or_bootstraps() {
+  all_sandbox
+  run_lab all
+  expect_rc 0 || return 1
+  local got
+  got="$(grep '^kolla ' "${T}/log" | awk '{ print $2 }' | paste -sd' ')"
+  [[ "${got}" == "prechecks deploy post-deploy deploy" ]] || fail "acoes do Kolla: ${got}" || return 1
+  if grep -qE '^kolla (destroy|bootstrap-servers)|^terraform destroy' "${T}/log"; then
+    fail "chamou destroy ou bootstrap-servers" || return 1
+  fi
+}
+
+test_all_deploy_steps_run_fixwired_extnet() {
+  all_sandbox
+  run_lab all
+  expect_rc 0 || return 1
+  local name
+  for name in deploy post-deploy deploy-https; do
+    all_step_section "${name}" | grep -q 'Padrao do lab: cabo' || fail "${name} sem fix-wired" || return 1
+    all_step_section "${name}" | grep -q 'ext-net OK' || fail "${name} sem ext-net" || return 1
+  done
+  if all_step_section prechecks | grep -qE 'Padrao do lab: cabo|ext-net OK'; then
+    fail "prechecks rodou fix-wired ou ext-net" || return 1
+  fi
+}
+
+test_all_zorin_facts_each_kolla_step() {
+  all_sandbox
+  echo 'ID=zorin' >"${OS_RELEASE}"
+  export FORCE_UBUNTU_FACTS=true
+  run_lab all
+  expect_rc 0 || return 1
+  local n
+  n="$(grep -c '^ansible .*-m setup' "${T}/log")"
+  [[ "${n}" -eq 4 ]] || fail "setup chamado ${n} vezes" || return 1
+  n="$(grep '^kolla ' "${T}/log" | grep -cE -- '-e @')"
+  [[ "${n}" -eq 4 ]] || fail "${n} etapas Kolla com -e @facts" || return 1
+  n="$(grep '^kolla ' "${T}/log" | grep -oE -- '-e @[^ ]+' | sort -u | wc -l)"
+  [[ "${n}" -eq 4 ]] || fail "esperado 4 arquivos de facts, obtido ${n}" || return 1
+  [[ "$(grep -c '^kolla-tmp 2$' "${T}/log")" -eq 4 ]] \
+    || fail "temporarios de outra etapa durante o Kolla: $(grep '^kolla-tmp' "${T}/log" | paste -sd' ')" || return 1
+  [[ -z "$(ls -A "${TMPDIR}")" ]] || fail "temporarios sobrando: $(ls -A "${TMPDIR}")" || return 1
+}
+
+test_all_prep_removes_host_ovs_before_kolla() {
+  all_sandbox
+  run_lab all
+  expect_rc 0 || return 1
+  local stop_ovs rm_ovs first_kolla
+  stop_ovs="$(grep -n '^systemctl stop openvswitch-switch$' "${T}/log" | head -1 | cut -d: -f1)"
+  rm_ovs="$(grep -n '^docker rm -f openvswitch_db openvswitch_vswitchd$' "${T}/log" | head -1 | cut -d: -f1)"
+  first_kolla="$(grep -n '^kolla ' "${T}/log" | head -1 | cut -d: -f1)"
+  [[ -n "${stop_ovs}" && -n "${rm_ovs}" && -n "${first_kolla}" ]] || fail "sem fix-ovs no log" || return 1
+  [[ "${stop_ovs}" -lt "${first_kolla}" && "${rm_ovs}" -lt "${first_kolla}" ]] || fail "fix-ovs depois do Kolla" || return 1
+}
+
+test_all_https_waits_for_vip() {
+  all_sandbox
+  run_lab all
+  expect_rc 0 || return 1
+  local last_deploy vip https
+  last_deploy="$(grep -n '^kolla deploy ' "${T}/log" | tail -1 | cut -d: -f1)"
+  vip="$(grep -n '^curl .*http://192\.168\.1\.250:5000/$' "${T}/log" | tail -1 | cut -d: -f1)"
+  https="$(grep -n '^checks https_cloud$' "${T}/log" | cut -d: -f1)"
+  [[ -n "${last_deploy}" && -n "${vip}" && -n "${https}" ]] || fail "falta deploy, espera do VIP ou https_cloud" || return 1
+  [[ "${last_deploy}" -lt "${vip}" && "${vip}" -lt "${https}" ]] || fail "https_cloud sem esperar o VIP" || return 1
+  all_step_section https-cloud | grep -qx 'API respondendo em 192.168.1.250:5000.' || fail "etapa sem a espera do VIP" || return 1
+  all_sandbox
+  export FAKE_VIP_DOWN=1 VIP_WAIT=0
+  run_lab all --from https-cloud
+  expect_rc 1 || return 1
+  grep -qx 'FALHOU na etapa 15/15 (https-cloud), codigo 1' "${T}/err" || fail "VIP fora: sem bloco de falha" || return 1
+  if grep -q '^checks https_cloud$' "${T}/log"; then fail "VIP fora: rodou o https_cloud" || return 1; fi
+}
+
+test_install_prereqs_no_failure_block() {
+  install_sandbox
+  rm -f "${HOME}/.ssh/id_ed25519.pub"
+  run_lab install-app
+  expect_rc 1 || return 1
+  if grep -qE '^FALHOU|^Para continuar' "${T}/err"; then fail "install-app: bloco nos prereqs" || return 1; fi
+  install_sandbox
+  rm -f "${T}/project/cloud/secrets/clouds.yaml"
+  run_lab start-app
+  expect_rc 1 || return 1
+  if grep -qE '^FALHOU|^Para continuar' "${T}/err"; then fail "start-app: bloco nos prereqs" || return 1; fi
+  install_sandbox
+  rm -f "${T}/project/cloud/secrets/clouds.yaml"
+  run_lab recreate-app --yes
+  expect_rc 1 || return 1
+  if grep -qE '^FALHOU|^Para continuar' "${T}/err"; then fail "recreate-app: bloco nos prereqs" || return 1; fi
+}
+
+test_all_success_output() {
+  all_sandbox
+  run_lab all
+  expect_rc 0 || return 1
+  grep -qx 'Pronto. Abra https://larcerto.com.br' "${T}/out" || fail "sem a URL da app" || return 1
+  grep -qx 'Painel: https://cloud.larcerto.com.br' "${T}/out" || fail "sem a URL do painel" || return 1
+}
+
+all_break_step() {
+  case "$1" in
+    prep)
+      fake ip 'echo "ip $*" >>"$FAKE_LOG"
+case "$*" in
+  "link show dummy0") exit 1 ;;
+  "link add dummy0 type dummy") exit 7 ;;
+esac
+exit 0' ;;
+    prechecks|deploy|post-deploy) export FAKE_KOLLA_FAIL="$1" ;;
+    deploy-https) export FAKE_KOLLA_FAIL=deploy FAKE_KOLLA_FAIL_NTH=2 ;;
+    prereqs) rm -f "${HOME}/.ssh/id_ed25519.pub" ;;
+    cert-cloud) rm -f "${FAKE_PKI}/ca.key" ;;
+    *) export FAKE_FAIL="$1" FAKE_RC=7 ;;
+  esac
+}
+
+test_all_step_failure_stops() {
+  local i=0 name want
+  for name in "${ALL_STEP_NAMES[@]}"; do
+    i=$((i + 1))
+    all_sandbox
+    all_break_step "${name}"
+    run_lab all
+    want=7
+    case "${name}" in
+      prereqs|cert-cloud) want=1 ;;
+      start) want=123 ;;
+    esac
+    [[ "${RC}" -eq "${want}" ]] || fail "${name}: exit ${RC}, esperado ${want}" || return 1
+    grep -qx "FALHOU na etapa ${i}/15 (${name}), codigo ${want}" "${T}/err" || fail "${name}: bloco de falha" || return 1
+    grep -qE '^Dica: .+' "${T}/err" || fail "${name}: sem dica" || return 1
+    grep -qx "Para continuar: ./project/lab.sh all --from ${name}" "${T}/err" || fail "${name}: linha de continuacao" || return 1
+    [[ "$(grep -cE '^==> \[[0-9]+/15\] ' "${T}/out")" -eq "${i}" ]] || fail "${name}: etapa depois da falha rodou" || return 1
+  done
+}
+
+test_all_from_runs_tail() {
+  all_sandbox
+  run_lab all --from nuvem
+  expect_rc 0 || return 1
+  local got
+  got="$(grep -oE '^==> \[[0-9]+/15\] [a-z-]+' "${T}/out" | awk '{ print $2, $3 }' | paste -sd' ')"
+  [[ "${got}" == "[5/15] prereqs [9/15] nuvem [10/15] app [11/15] dns-host [12/15] checks [13/15] cert-cloud [14/15] deploy-https [15/15] https-cloud" ]] \
+    || fail "etapas: ${got}" || return 1
+  if grep -qE '^bootstrap$|^terraform ' "${T}/log"; then fail "etapa anterior rodou" || return 1; fi
+  [[ "$(grep -c '^kolla ' "${T}/log")" -eq 1 ]] || fail "so o deploy-https deveria chamar o Kolla" || return 1
+}
+
+test_all_from_unknown_exit_1() {
+  all_sandbox
+  run_lab all --from bogus
+  expect_rc 1 || return 1
+  grep -qxF "Etapa desconhecida: 'bogus'. Etapas validas: ${ALL_STEP_NAMES[*]}" "${T}/err" \
+    || fail "sem a lista das 15 etapas" || return 1
+  if grep -q '^==> ' "${T}/out"; then fail "alguma etapa rodou" || return 1; fi
+  [[ ! -s "${T}/log" ]] || fail "chamou algum comando: $(cat "${T}/log")" || return 1
+}
+
+test_all_rejects_args() {
+  local args
+  for args in "foo" "--from" "--from nuvem extra"; do
+    all_sandbox
+    # shellcheck disable=SC2086
+    run_lab all ${args}
+    expect_rc 1 || return 1
+    if [[ "${args}" == "--from" ]]; then
+      grep -q '^Etapa desconhecida' "${T}/err" || fail "--from sem etapa: sem Etapa desconhecida" || return 1
+    else
+      grep -qxF 'Uso: ./project/lab.sh all [--from <etapa>]' "${T}/err" || fail "${args}: sem Uso" || return 1
+    fi
+    if grep -q '^==> ' "${T}/out"; then fail "${args}: alguma etapa rodou" || return 1; fi
+    [[ ! -s "${T}/log" ]] || fail "${args}: chamou algum comando" || return 1
+  done
+}
+
+test_kolla_single_action_each() {
+  local pair cmd want got
+  for pair in deploy:deploy bootstrap:bootstrap-servers prechecks:prechecks post-deploy:post-deploy stop-kolla:stop; do
+    cmd="${pair%%:*}"
+    want="${pair##*:}"
+    : >"${T}/log"
+    run_lab "${cmd}"
+    expect_rc 0 || return 1
+    got="$(grep '^kolla ' "${T}/log" | awk '{ print $2 }' | paste -sd' ')"
+    [[ "${got}" == "${want}" ]] || fail "${cmd}: acoes ${got}, esperado ${want}" || return 1
+  done
+}
+
+test_all_docs() {
+  local d
+  for d in README.md docs/lab.sh.md docs/kolla-ansible-quickstart.md; do
+    grep -qF 'all --from' "${PROJECT_DIR}/${d}" || fail "${d} sem all --from" || return 1
+    grep -iE 'm[aá]quina nova' "${PROJECT_DIR}/${d}" | grep -qF './project/lab.sh bootstrap' \
+      || fail "${d} sem bootstrap para maquina nova" || return 1
+  done
+  run_lab help
+  grep -qF 'all --from' "${T}/out" || grep -qF 'all [--from' "${T}/out" || fail "help sem all --from" || return 1
+  grep -iE 'm[aá]quina nova' "${T}/out" | grep -qF './project/lab.sh bootstrap' \
+    || fail "help sem bootstrap para maquina nova" || return 1
 }
 
 # ---------------------------------------------------------------- runner

@@ -41,6 +41,11 @@ Comandos:
   start          Sobe o lab já deployado (dummy0 + kolla-* + ext-net + fix-wired)
   ext-net        IP 172.24.4.1/24 na br-ex + NAT: floating IPs alcançáveis do host [--down]
   dns-host       Split DNS do host: larcerto.com.br -> VM dns [<ip>|--down]
+  all            Sobe o projeto inteiro, sem apagar nada [--from <etapa>]
+                 (etapas: prep prechecks deploy post-deploy prereqs start bootstrap terraform nuvem
+                  app dns-host checks cert-cloud deploy-https https-cloud)
+                 Continuar de uma etapa: ./project/lab.sh all --from <etapa>
+                 Maquina nova: rode antes ./project/lab.sh bootstrap
   install-app    Confere pre-requisitos e sobe nuvem + app em sequencia [--from <etapa>]
                  (etapas: prereqs start bootstrap terraform nuvem app dns-host checks)
   start-app      Religa uma instalacao existente (VMs SHUTOFF, dns-host, checks)
@@ -53,9 +58,9 @@ Comandos:
                  trust: importa a CA nos bancos NSS do navegador (sem sudo)
                  cloud: certificado do Horizon (https://cloud.larcerto.com.br), emitido na VM ca e
                         servido pelo HAProxy do Kolla na 443 (root; depois, uma vez: deploy)
-  deploy | bootstrap | prechecks | post-deploy | all | stop-kolla
+  deploy | bootstrap | prechecks | post-deploy | stop-kolla
                  Comandos Kolla (scripts/kolla/kolla.sh):
-                 (deploy / all / post-deploy: depois corre fix-wired e ext-net automaticamente)
+                 (deploy / post-deploy: depois corre fix-wired e ext-net automaticamente)
 
 Exemplos:
   chmod +x project/lab.sh
@@ -86,12 +91,13 @@ case "${ACTION}" in
   start) cmd_start ;;
   ext-net) cmd_ext_net "$@" ;;
   dns-host) cmd_dns_host "$@" ;;
+  all) run_all "$@" ;;
   install-app) install_app "$@" ;;
   start-app) start_app "$@" ;;
   recreate-app) recreate_app "$@" ;;
   cert) cert_main "$@" ;;
   vms) cmd_vms "$@" ;;
-  deploy|bootstrap|prechecks|post-deploy|all) cmd_kolla "${ACTION}" "$@" ;;
+  deploy|bootstrap|prechecks|post-deploy) cmd_kolla "${ACTION}" "$@" ;;
   stop-kolla) cmd_kolla stop "$@" ;;
   *)
     echo "Comando desconhecido: ${ACTION}" >&2

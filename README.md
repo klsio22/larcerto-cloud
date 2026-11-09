@@ -143,11 +143,13 @@ ping -c1 192.168.1.250          # sem resposta = VIP livre
 ./project/lab.sh post-deploy    # tambem garante fix-wired
 ```
 
-Atalho (bootstrap + prechecks + deploy + fix-wired no fim):
+Atalho para subir o projeto inteiro de uma vez (OpenStack, nuvem, app e HTTPS do Horizon), sem apagar nada. Se uma etapa falhar, ele mostra como continuar com `./project/lab.sh all --from <etapa>`:
 
 ```bash
 ./project/lab.sh all
 ```
+
+Numa máquina nova, rode antes `./project/lab.sh bootstrap`. Repetir o `all` com a nuvem no ar corta a rede das VMs até o `deploy` recriar o OVS.
 
 ### 3) Testar
 

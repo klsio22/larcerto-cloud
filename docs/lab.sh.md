@@ -14,10 +14,10 @@ Código: [`../lab.sh`](../lab.sh). O `lab.sh` só carrega os módulos de `script
 | [`scripts/lab/rede.sh`](../scripts/lab/rede.sh) | `lab.sh` | `dummy0`, `fix-wired`, `ext-net`, `dns-host` |
 | [`scripts/lab/ovs.sh`](../scripts/lab/ovs.sh) | `lab.sh` | `fix-ovs`, `test-ovs` e leitura das portas da `br-ex` |
 | [`scripts/lab/ciclo.sh`](../scripts/lab/ciclo.sh) | `lab.sh` | `prep`, `status`, `start`, `stop`, `fix-horizon` |
-| [`scripts/lab/install.sh`](../scripts/lab/install.sh) | `lab.sh` | `install-app` (8 etapas, `--from`), `start-app` (religa a instalação), `recreate-app` (apaga e recria a infra da app) |
+| [`scripts/lab/install.sh`](../scripts/lab/install.sh) | `lab.sh` | `all` (15 etapas, `--from`), `install-app` (8 etapas, `--from`), `start-app` (religa a instalação), `recreate-app` (apaga e recria a infra da app) |
 | [`scripts/lab/cert.sh`](../scripts/lab/cert.sh) | `lab.sh` | `cert` (`status`, `renew`, `renew --new-ca`, `trust`, `cloud`) do certificado da LarCerto e do Horizon |
 | [`scripts/lab/vms.sh`](../scripts/lab/vms.sh) | `lab.sh` | `vms`: lista as VMs do projeto `larcerto` (só leitura) |
-| [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.sh) | wrapper Kolla removido | `bootstrap`, `prechecks`, `deploy`, `post-deploy`, `all`, `stop-kolla` |
+| [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.sh) | wrapper Kolla removido | `bootstrap`, `prechecks`, `deploy`, `post-deploy`, `stop-kolla` |
 | [`scripts/kolla/zorin_facts.py`](../scripts/kolla/zorin_facts.py) | wrapper Kolla removido | facts do Zorin para o Kolla |
 
 Os arquivos de `scripts/` só definem funções e variáveis: nada roda ao carregá-los.
@@ -83,7 +83,7 @@ Imprime help CLI (`help` / `-h` / `--help`).
 
 ### `cmd_kolla`
 
-Chama `kolla_run <ação>` de [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.sh). Se o Kolla falhar, o `lab.sh` sai com o mesmo código. Se a ação for `deploy`, `all` ou `post-deploy` e o Kolla terminar com sucesso, corre `cmd_fix_wired` automaticamente (NIC de gestão fora do `br-ex`); se o `fix-wired` falhar, imprime `AVISO` no stderr e sai com 0, porque o deploy deu certo.
+Chama `kolla_run <ação>` de [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.sh). Se o Kolla falhar, o `lab.sh` sai com o mesmo código. Se a ação for `deploy` ou `post-deploy` e o Kolla terminar com sucesso, corre `cmd_fix_wired` automaticamente (NIC de gestão fora do `br-ex`); se o `fix-wired` falhar, imprime `AVISO` no stderr e sai com 0, porque o deploy deu certo.
 
 ---
 
@@ -111,7 +111,7 @@ Chama `kolla_run <ação>` de [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.
 | `prechecks` | `cmd_kolla` | → `kolla_run prechecks` |
 | `deploy` | `cmd_kolla` | → `kolla_run deploy` + `fix-wired` + `ext-net` |
 | `post-deploy` | `cmd_kolla` | → `kolla_run post-deploy` + `fix-wired` + `ext-net` |
-| `all` | `cmd_kolla` | → `kolla_run all` + `fix-wired` + `ext-net` |
+| `all` | `run_all` (`scripts/lab/install.sh`) | `./project/lab.sh all [--from <etapa>]`: sobe o projeto inteiro em 15 etapas, sem apagar nada: `prep` → `prechecks` → `deploy` → `post-deploy` → `prereqs` → `start` → `bootstrap` → `terraform` → `nuvem` → `app` → `dns-host` → `checks` → `cert-cloud` → `deploy-https` → `https-cloud`. Falhou: mostra a etapa e `all --from <etapa>`. Numa máquina nova, rode antes `./project/lab.sh bootstrap`. Repetir com a nuvem no ar corta a rede das VMs até o `deploy` recriar o OVS |
 | `stop-kolla` | `cmd_kolla` | → `kolla_run stop` |
 | `help` | `usage` | Ajuda |
 
@@ -219,7 +219,7 @@ Sobe um lab **já deployado**, sem `kolla-ansible deploy`:
 
 ## Kolla (`scripts/kolla/kolla.sh`)
 
-Os comandos `bootstrap`, `prechecks`, `deploy`, `post-deploy`, `all` e `stop-kolla` rodam `kolla-ansible` com inventário, `kolla-config` e facts do Zorin. Variáveis de ambiente (padrões entre parênteses):
+Os comandos `bootstrap`, `prechecks`, `deploy`, `post-deploy` e `stop-kolla` rodam `kolla-ansible` com inventário, `kolla-config` e facts do Zorin. Variáveis de ambiente (padrões entre parênteses):
 
 | Variável | Padrão | Uso |
 |----------|--------|-----|
@@ -234,7 +234,7 @@ Os comandos `bootstrap`, `prechecks`, `deploy`, `post-deploy`, `all` e `stop-kol
 | `AUTO_STOP_HOST_LIBVIRT` | `true` | Para o libvirt do host (`stop_host_libvirt`) antes de cada etapa do Kolla e no `start` (conflita com o `nova_libvirt`) |
 | `OS_RELEASE` | `/etc/os-release` | Arquivo lido para detectar Zorin |
 
-Ordem das etapas: `all` = `bootstrap-servers` → `prechecks` → `deploy`; `bootstrap` = `bootstrap-servers`; os demais rodam a própria ação. Os arquivos temporários de facts são removidos ao sair do `lab.sh`, mesmo se o kolla-ansible falhar.
+Ordem das etapas: `bootstrap` = `bootstrap-servers`; os demais rodam a própria ação. Os arquivos temporários de facts são removidos ao sair do `lab.sh`, mesmo se o kolla-ansible falhar.
 
 ## Testes
 
