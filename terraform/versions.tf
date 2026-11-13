@@ -13,8 +13,8 @@ terraform {
   }
 }
 
-# Credenciais do devops1 via clouds.yaml gerado pelo project/cloud/bootstrap.sh
-# (OS_CLIENT_CONFIG_FILE=project/cloud/secrets/clouds.yaml), em vez de senha no .tf.
+# Credenciais do devops1 via clouds.yaml gerado pelo cloud/bootstrap.sh
+# (OS_CLIENT_CONFIG_FILE=cloud/secrets/clouds.yaml), em vez de senha no .tf.
 provider "openstack" {
   cloud = var.cloud
 }

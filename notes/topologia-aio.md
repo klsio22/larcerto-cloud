@@ -25,7 +25,7 @@ Portas: ver [`../docs/ports.md`](../docs/ports.md).
 | `neutron_external_interface` | `dummy0` | Neutron não assume a NIC física |
 | `kolla_internal_vip_address` | `192.168.1.250` | Endpoint Horizon/APIs (confirmar IP livre na LAN) |
 
-Colocar o cabo em `neutron_external_interface` (ou no `br-ex` do OVS) derruba a rede. Este lab usa só `dummy0` na externa. O fluxo normal (`lab.sh deploy` / `all` / `post-deploy`) corre `fix-wired` no fim; se a cabo ainda ficar sem IPv4, corre `./project/lab.sh fix-wired` de novo.
+Colocar o cabo em `neutron_external_interface` (ou no `br-ex` do OVS) derruba a rede. Este lab usa só `dummy0` na externa. O fluxo normal (`lab.sh deploy` / `all` / `post-deploy`) corre `fix-wired` no fim; se a cabo ainda ficar sem IPv4, corre `./lab.sh fix-wired` de novo.
 
 ## Aula → passo
 
@@ -40,17 +40,17 @@ Colocar o cabo em `neutron_external_interface` (ou no `br-ex` do OVS) derruba a 
 
 1. Venv Kolla ativo (`~/venvs/kolla`) e `kolla-ansible install-deps` já feito.
 2. Conferir VIP livre: `ping -c1 192.168.1.250` (não deve responder se estiver livre).
-3. Prep (dummy0 + OVS do host): `./project/lab.sh prep`
+3. Prep (dummy0 + OVS do host): `./lab.sh prep`
 4. Revisar [`../kolla-config/globals.yml`](../kolla-config/globals.yml): `enp9s0`, `dummy0`, VIP.
 5. Subir na ordem:
-   - `./project/lab.sh bootstrap`
-   - `./project/lab.sh prechecks`
-   - `./project/lab.sh deploy`
-   - `./project/lab.sh post-deploy`
+   - `./lab.sh bootstrap`
+   - `./lab.sh prechecks`
+   - `./lab.sh deploy`
+   - `./lab.sh post-deploy`
 6. Abrir Horizon: `http://192.168.1.250`
 7. Instalar CLI (se ainda não tiver): `pip install python-openstackclient` no venv.
 
-Estado / parar / subir: `./project/lab.sh status` · `./project/lab.sh stop` · `./project/lab.sh start`
+Estado / parar / subir: `./lab.sh status` · `./lab.sh stop` · `./lab.sh start`
 
 ## Pós-nuvem (ainda pendente no Trabalho 1)
 

@@ -109,7 +109,7 @@ kolla_run() {
     bootstrap) steps=(bootstrap-servers) ;;
     prechecks|deploy|post-deploy|stop) steps=("${action}") ;;
     *)
-      echo "Uso: ./project/lab.sh {bootstrap|prechecks|deploy|post-deploy|stop-kolla}" >&2
+      echo "Uso: ./lab.sh {bootstrap|prechecks|deploy|post-deploy|stop-kolla}" >&2
       exit 1
       ;;
   esac
@@ -139,7 +139,7 @@ cmd_kolla() {
         echo "AVISO: fix-wired nao confirmou IPv4 (cabo desligado?). Deploy Kolla terminou OK." >&2
       fi
       if ! cmd_ext_net; then
-        echo "AVISO: ext-net falhou. Deploy Kolla terminou OK; tente: ./project/lab.sh ext-net" >&2
+        echo "AVISO: ext-net falhou. Deploy Kolla terminou OK; tente: ./lab.sh ext-net" >&2
       fi
       ;;
   esac

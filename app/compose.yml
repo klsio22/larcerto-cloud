@@ -14,7 +14,7 @@ services:
       - DB_HOST=127.0.0.1
       - DB_NAME=larcerto
       - DB_USER=larcerto
-      - "DB_PASSWORD=${DB_PASSWORD?defina DB_PASSWORD em project/app/.env (cp .env.example .env)}"
+      - "DB_PASSWORD=${DB_PASSWORD?defina DB_PASSWORD em app/.env (cp .env.example .env)}"
     volumes:
       - ./public:/var/www/larcerto/public:ro
       - ./backend:/var/www/larcerto/backend:ro
@@ -33,7 +33,7 @@ services:
     environment:
       - MARIADB_DATABASE=larcerto
       - MARIADB_USER=larcerto
-      - "MARIADB_PASSWORD=${DB_PASSWORD?defina DB_PASSWORD em project/app/.env (cp .env.example .env)}"
+      - "MARIADB_PASSWORD=${DB_PASSWORD?defina DB_PASSWORD em app/.env (cp .env.example .env)}"
       - MARIADB_RANDOM_ROOT_PASSWORD=1
     volumes:
       - db_data:/var/lib/mysql

@@ -97,21 +97,21 @@ Se os `prechecks` falharem, corrija primeiro rede/interface/VIP e execute novame
 
 ### 7.1) Comandos equivalentes neste repositorio
 
-Este projeto ja inclui inventario (`project/all-in-one`) e config (`project/kolla-config/`).
+Este projeto ja inclui inventario (`all-in-one`) e config (`kolla-config/`).
 Para usar exatamente essa estrutura:
 
 ```bash
-./project/lab.sh all
+./lab.sh all
 ```
 
-Esse comando sobe o projeto inteiro (OpenStack, nuvem, app e HTTPS do Horizon) e continua de uma etapa com `./project/lab.sh all --from <etapa>`. Numa máquina nova, rode antes `./project/lab.sh bootstrap`.
+Esse comando sobe o projeto inteiro (OpenStack, nuvem, app e HTTPS do Horizon) e continua de uma etapa com `./lab.sh all --from <etapa>`. Numa máquina nova, rode antes `./lab.sh bootstrap`.
 
 Só o OpenStack, em etapas:
 
 ```bash
-./project/lab.sh bootstrap
-./project/lab.sh prechecks
-./project/lab.sh deploy
+./lab.sh bootstrap
+./lab.sh prechecks
+./lab.sh deploy
 ```
 
 ## 8) Pos-deploy e uso inicial
@@ -125,7 +125,7 @@ kolla-ansible post-deploy
 No repositorio:
 
 ```bash
-./project/lab.sh post-deploy
+./lab.sh post-deploy
 ```
 
 Instalar cliente OpenStack:

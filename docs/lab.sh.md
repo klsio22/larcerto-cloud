@@ -3,7 +3,7 @@
 Entrypoint único do lab AIO (dummy0, OVS host, testes, stop/start, fixes e deploy Kolla).
 
 ```bash
-./project/lab.sh <comando> [opções]
+./lab.sh <comando> [opções]
 ```
 
 Código: [`../lab.sh`](../lab.sh). O `lab.sh` só carrega os módulos de `scripts/` com `source`, imprime o `usage` e despacha o comando. Cada assunto fica num arquivo:
@@ -26,7 +26,7 @@ Os arquivos de `scripts/` só definem funções e variáveis: nada roda ao carre
 
 | Variável | Valor | Uso |
 |----------|-------|-----|
-| `SCRIPT_DIR` | pasta `project/` | Base dos scripts |
+| `SCRIPT_DIR` | raiz do repo | Base dos scripts |
 | `GLOBALS_YML` | `kolla-config/globals.yml` | Lê `network_interface`, `neutron_external_interface` e `kolla_internal_vip_address` (definido em `scripts/common.sh`) |
 | `DOCKER` | array (`docker` ou `sudo docker`) | Preenchido por `init_docker` |
 
@@ -75,7 +75,7 @@ Leem `globals.yml` via `read_globals`:
 
 ### `warn_or_fail_mgmt_on_br_ex`
 
-Modo `warn` ou `fail`. Lista portas de `br-ex`; se a NIC de gestão estiver lá, avisa (e falha no modo `fail`). Sugere `./project/lab.sh fix-wired`.
+Modo `warn` ou `fail`. Lista portas de `br-ex`; se a NIC de gestão estiver lá, avisa (e falha no modo `fail`). Sugere `./lab.sh fix-wired`.
 
 ### `usage`
 
@@ -104,14 +104,14 @@ Chama `kolla_run <ação>` de [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.
 | `dns-host` | `cmd_dns_host` | Split DNS do host: só `~larcerto.com.br` na `br-ex` vai para a VM `dns` (`--down` desfaz) |
 | `install-app` | `install_app` (`scripts/lab/install.sh`) | Confere os pré-requisitos (instala o Terraform se faltar) e sobe nuvem + app em 8 etapas (`--from <etapa>` continua de uma etapa); para na que falhar e mostra como continuar |
 | `start-app` | `start_app` (`scripts/lab/install.sh`) | Religa uma instalação existente: `start`, VMs `SHUTOFF`, `dns-host` e `checks`; sem `bootstrap`, Terraform ou Ansible |
-| `recreate-app` | `recreate_app` (`scripts/lab/install.sh`) | `./project/lab.sh recreate-app [--yes]`: pede para digitar `larcerto` (o `--yes` pula), depois `prereqs` → `start` → `destroy` (`terraform destroy -auto-approve` como `devops1`) → `terraform` → `nuvem` → `app` → `dns-host` → `checks`; termina com `Recriado em <M>min<S>s` (do `destroy` ao `checks`). Falhou: mostra a etapa e `install-app --from <etapa>` (ou `recreate-app`, se foi o `destroy`). Usa root no `start` (libvirt, `dummy0`, `ext-net`) e no `dns-host` (`resolvectl`), pelo `run_as_root`: sem sudo NOPASSWD e sem grupo `docker`, o `sudo` pede a senha |
-| `cert` | `cert_main` (`scripts/lab/cert.sh`) | Certificado da LarCerto. `status` (padrão): CN, SAN, validade, `openssl verify` e se o `web` serve o mesmo (exit 0; 1 se falta arquivo; 2 se a cadeia não confere, expirou ou o `web` serve outro). `renew`: `site.yml --limit ca,web -e cert_renew=true` (mesma CA). `renew --new-ca [--yes]`: pede `nova-ca`, copia `files/pki/` para `backup-<data>/` e roda com `ca_new=true`. `trust`: `certutil -A` em cada banco NSS do usuário (sem `sudo`; sai 1 se um banco falha). `cloud` (`./project/lab.sh cert cloud`): se `files/pki/cloud.crt` falta ou não confere com a CA, `site.yml --limit ca -e cert_cloud=true` (SAN `cloud` e `horizon`); depois grava `/etc/kolla/haproxy/haproxy.pem` (cert + CA + chave, root 600, pelo `run_as_root`), e, se o frontend 443 já existe, roda `docker restart haproxy`; senão pede o `deploy` que cria o frontend 443 de `https://cloud.larcerto.com.br`; o `status` ganha o bloco `Horizon (cloud)` |
+| `recreate-app` | `recreate_app` (`scripts/lab/install.sh`) | `./lab.sh recreate-app [--yes]`: pede para digitar `larcerto` (o `--yes` pula), depois `prereqs` → `start` → `destroy` (`terraform destroy -auto-approve` como `devops1`) → `terraform` → `nuvem` → `app` → `dns-host` → `checks`; termina com `Recriado em <M>min<S>s` (do `destroy` ao `checks`). Falhou: mostra a etapa e `install-app --from <etapa>` (ou `recreate-app`, se foi o `destroy`). Usa root no `start` (libvirt, `dummy0`, `ext-net`) e no `dns-host` (`resolvectl`), pelo `run_as_root`: sem sudo NOPASSWD e sem grupo `docker`, o `sudo` pede a senha |
+| `cert` | `cert_main` (`scripts/lab/cert.sh`) | Certificado da LarCerto. `status` (padrão): CN, SAN, validade, `openssl verify` e se o `web` serve o mesmo (exit 0; 1 se falta arquivo; 2 se a cadeia não confere, expirou ou o `web` serve outro). `renew`: `site.yml --limit ca,web -e cert_renew=true` (mesma CA). `renew --new-ca [--yes]`: pede `nova-ca`, copia `files/pki/` para `backup-<data>/` e roda com `ca_new=true`. `trust`: `certutil -A` em cada banco NSS do usuário (sem `sudo`; sai 1 se um banco falha). `cloud` (`./lab.sh cert cloud`): se `files/pki/cloud.crt` falta ou não confere com a CA, `site.yml --limit ca -e cert_cloud=true` (SAN `cloud` e `horizon`); depois grava `/etc/kolla/haproxy/haproxy.pem` (cert + CA + chave, root 600, pelo `run_as_root`), e, se o frontend 443 já existe, roda `docker restart haproxy`; senão pede o `deploy` que cria o frontend 443 de `https://cloud.larcerto.com.br`; o `status` ganha o bloco `Horizon (cloud)` |
 | `vms` | `cmd_vms` (`scripts/lab/vms.sh`) | VMs do projeto `larcerto` pela API, como `devops1`: nome, status, IP privado, floating IP (o IP em `172.24.4.0/24`) e uma linha de `ssh` por VM `ACTIVE` com floating IP. Só `server list`. Sai 1 se falta `cloud/secrets/clouds.yaml`, o cliente `openstack` do venv ou a API não responde |
 | `bootstrap` | `cmd_kolla` | → `kolla_run bootstrap` |
 | `prechecks` | `cmd_kolla` | → `kolla_run prechecks` |
 | `deploy` | `cmd_kolla` | → `kolla_run deploy` + `fix-wired` + `ext-net` |
 | `post-deploy` | `cmd_kolla` | → `kolla_run post-deploy` + `fix-wired` + `ext-net` |
-| `all` | `run_all` (`scripts/lab/install.sh`) | `./project/lab.sh all [--from <etapa>]`: sobe o projeto inteiro em 15 etapas, sem apagar nada: `prep` → `prechecks` → `deploy` → `post-deploy` → `prereqs` → `start` → `bootstrap` → `terraform` → `nuvem` → `app` → `dns-host` → `checks` → `cert-cloud` → `deploy-https` → `https-cloud`. Falhou: mostra a etapa e `all --from <etapa>`. Numa máquina nova, rode antes `./project/lab.sh bootstrap`. Repetir com a nuvem no ar corta a rede das VMs até o `deploy` recriar o OVS |
+| `all` | `run_all` (`scripts/lab/install.sh`) | `./lab.sh all [--from <etapa>]`: sobe o projeto inteiro em 15 etapas, sem apagar nada: `prep` → `prechecks` → `deploy` → `post-deploy` → `prereqs` → `start` → `bootstrap` → `terraform` → `nuvem` → `app` → `dns-host` → `checks` → `cert-cloud` → `deploy-https` → `https-cloud`. Falhou: mostra a etapa e `all --from <etapa>`. Numa máquina nova, rode antes `./lab.sh bootstrap`. Repetir com a nuvem no ar corta a rede das VMs até o `deploy` recriar o OVS |
 | `stop-kolla` | `cmd_kolla` | → `kolla_run stop` |
 | `help` | `usage` | Ajuda |
 
@@ -160,7 +160,7 @@ Exit 1 se algum check falhar.
 
 #### `cmd_fix_horizon` (`fix-horizon`)
 
-`docker rm -f horizon` para desbloquear recreate com erro 409. Depois: `./project/lab.sh deploy`.
+`docker rm -f horizon` para desbloquear recreate com erro 409. Depois: `./lab.sh deploy`.
 
 #### `cmd_status` (`status`)
 
@@ -200,7 +200,7 @@ Equivalente automatizado do que o professor refaz à mão no DevStack após rebo
 
 #### `cmd_dns_host` (`dns-host`)
 
-`resolvectl dns br-ex <ip>` + `resolvectl domain br-ex ~larcerto.com.br`: só o domínio do lab passa a ser resolvido pela VM `dns`; o resto continua no DNS atual. Sem argumento, lê o IP da VM `dns` de `project/ansible/inventory/hosts.ini` (gerado pelo Terraform). `--down` faz `resolvectl revert br-ex`. Não persiste no reboot.
+`resolvectl dns br-ex <ip>` + `resolvectl domain br-ex ~larcerto.com.br`: só o domínio do lab passa a ser resolvido pela VM `dns`; o resto continua no DNS atual. Sem argumento, lê o IP da VM `dns` de `ansible/inventory/hosts.ini` (gerado pelo Terraform). `--down` faz `resolvectl revert br-ex`. Não persiste no reboot.
 
 #### `cmd_start` (`start`)
 
@@ -225,8 +225,8 @@ Os comandos `bootstrap`, `prechecks`, `deploy`, `post-deploy` e `stop-kolla` rod
 |----------|--------|-----|
 | `VENV_PATH` | `$HOME/venvs/kolla` | Venv com `kolla-ansible`, `ansible` e os módulos `docker` e `dbus` |
 | `KOLLA_BIN` | `${VENV_PATH}/bin/kolla-ansible` | Executável do kolla-ansible |
-| `INVENTORY` | `project/all-in-one` | Inventário Ansible |
-| `CONFIG_DIR` | `project/kolla-config` | Pasta com `globals.yml` e demais configs |
+| `INVENTORY` | `all-in-one` | Inventário Ansible |
+| `CONFIG_DIR` | `kolla-config` | Pasta com `globals.yml` e demais configs |
 | `PASSWORDS_FILE` | `${CONFIG_DIR}/passwords.yml` | Senhas (nunca copiar valores para docs) |
 | `EXTRA_VARS` | vazio | Passado com `-e` ao kolla-ansible |
 | `FORCE_UBUNTU_FACTS` | `true` | Em Zorin OS, gera facts completos e ajusta distro/família |
@@ -238,18 +238,18 @@ Ordem das etapas: `bootstrap` = `bootstrap-servers`; os demais rodam a própria 
 
 ## Testes
 
-`bash project/tests/test-scripts.sh [teste ...]` testa `lab.sh` e os módulos de `scripts/` com comandos falsos no `PATH` (nada toca o host; não rodar como root).
+`bash tests/test-scripts.sh [teste ...]` testa `lab.sh` e os módulos de `scripts/` com comandos falsos no `PATH` (nada toca o host; não rodar como root).
 
 ## Exemplos
 
 ```bash
-chmod +x project/lab.sh
-./project/lab.sh prep
-./project/lab.sh bootstrap && ./project/lab.sh prechecks && ./project/lab.sh deploy
-./project/lab.sh post-deploy
-./project/lab.sh test-ovs
-./project/lab.sh fix-wired
-./project/lab.sh status
-./project/lab.sh stop
-./project/lab.sh start
+chmod +x lab.sh
+./lab.sh prep
+./lab.sh bootstrap && ./lab.sh prechecks && ./lab.sh deploy
+./lab.sh post-deploy
+./lab.sh test-ovs
+./lab.sh fix-wired
+./lab.sh status
+./lab.sh stop
+./lab.sh start
 ```

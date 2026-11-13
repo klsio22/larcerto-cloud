@@ -1,6 +1,6 @@
 {
   "name": "larcerto/app-tests",
-  "description": "Static analysis and browser tests for project/app (not deployed).",
+  "description": "Static analysis and browser tests for app/ (not deployed).",
   "type": "project",
   "require-dev": {
     "pestphp/pest": "^5.3",

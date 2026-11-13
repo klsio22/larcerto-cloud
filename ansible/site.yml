@@ -1,7 +1,7 @@
 ---
 # Configura as 4 VMs criadas pelo Terraform, nesta ordem:
 # dns (bind9) -> ca (easy-rsa) -> db (MariaDB) -> web (Apache + PHP + HTTPS).
-# Uso: cd project/ansible && ~/venvs/kolla/bin/ansible-playbook site.yml
+# Uso: cd ansible && ~/venvs/kolla/bin/ansible-playbook site.yml
 
 - name: Esperar as VMs e preparar o basico
   hosts: all

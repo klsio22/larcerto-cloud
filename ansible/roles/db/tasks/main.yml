@@ -1,6 +1,6 @@
 ---
 # MariaDB 12.3 (M05; repositorio oficial da MariaDB, porta 8) acessivel so pela rede privada.
-# Cria banco e usuario da app e aplica o SQL de project/app/sql/ (o mesmo do Compose local).
+# Cria banco e usuario da app e aplica o SQL de app/sql/ (o mesmo do Compose local).
 
 - name: Pasta de chaves do apt
   ansible.builtin.file:

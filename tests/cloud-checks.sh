@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Provas que exigem a nuvem montada (S1-S4 aplicadas). So leitura.
-# Uso: bash project/tests/cloud-checks.sh <check> [...]   (sem argumento: todos)
+# Uso: bash tests/cloud-checks.sh <check> [...]   (sem argumento: todos)
 set -uo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -49,8 +49,8 @@ check_https_ok() {
   grep -q 'LarCerto' <<<"${page}" && grep -qE 'class="resumo">[1-9][0-9]* imóve' <<<"${page}"
 }
 
-# Horizon por HTTPS no VIP com a CA LarCerto (spec cloud-https). Fora do ALL: o certificado do
-# Horizon e opcional (REQ12) e so existe depois do ./project/lab.sh cert cloud + deploy.
+# Horizon por HTTPS no VIP com a CA LarCerto. Fora do ALL: o certificado do
+# Horizon e opcional (REQ12) e so existe depois do ./lab.sh cert cloud + deploy.
 check_https_cloud() {
   [[ "$(curl -sS -o /dev/null -w '%{http_code}' --cacert "${PKI}/ca.crt" \
     --resolve "cloud.${DOMAIN}:443:192.168.1.250" "https://cloud.${DOMAIN}/auth/login/")" == 200 ]]

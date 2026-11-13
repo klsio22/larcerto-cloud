@@ -1,6 +1,6 @@
 ---
 # Apache + PHP 8.4 (M05/M10; PHP do PPA ondrej/php, porque o Ubuntu 22.04 so traz o 8.1) com HTTPS do
-# certificado wildcard da CA LarCerto. App: se project/app/public/index.php existir,
+# certificado wildcard da CA LarCerto. App: se app/public/index.php existir,
 # public/, backend/ e frontend/views/ sao publicados com as mesmas configs de Apache e PHP do
 # Compose; senao vai a pagina provisoria, que testa o banco.
 
@@ -169,7 +169,7 @@
     group: www-data
     mode: "0640"
 
-- name: Ha app CRUD em project/app/public?
+- name: Ha app CRUD em app/public?
   ansible.builtin.stat:
     path: "{{ playbook_dir }}/../app/public/index.php"
   delegate_to: localhost

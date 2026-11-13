@@ -1,4 +1,4 @@
-# Gerado pelo Terraform (project/terraform) - nao editar a mao.
+# Gerado pelo Terraform (terraform/) - nao editar a mao.
 %{ for name, vm in vms ~}
 [${name}]
 ${name}.larcerto.com.br ansible_host=${fips[name]} private_ip=${vm.ip}

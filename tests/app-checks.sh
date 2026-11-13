@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Provas do ambiente local da app (Docker Compose em project/app, independente da nuvem).
+# Provas do ambiente local da app (Docker Compose em app/, independente da nuvem).
 # Cria containers, volumes e imagem no host: so roda a mao, pelo aluno.
 # Atencao: apaga os dados do Compose local (schema mexe na tabela e
 # persistencia faz down -v, que leva banco e fotos).
-# Uso: bash project/tests/app-checks.sh [check ...]   (sem argumento: todos, na ordem)
-# Desfazer: docker compose -f project/app/compose.yml down -v --rmi local
+# Uso: bash tests/app-checks.sh [check ...]   (sem argumento: todos, na ordem)
+# Desfazer: docker compose -f app/compose.yml down -v --rmi local
 #           (+ docker image rm mariadb:12.3 php:8.4-apache php:8.4-cli para as imagens baixadas)
 set -uo pipefail
 
@@ -17,7 +17,7 @@ JAR="${T}/jar"
 BODY="${T}/body"
 trap 'rm -rf "${T}"' EXIT
 
-[[ -f "${APP_DIR}/.env" ]] || { echo "Sem ${APP_DIR}/.env: cp project/app/.env.example project/app/.env" >&2; exit 2; }
+[[ -f "${APP_DIR}/.env" ]] || { echo "Sem ${APP_DIR}/.env: cp app/.env.example app/.env" >&2; exit 2; }
 DB_PASSWORD="$(sed -n 's/^DB_PASSWORD=//p' "${APP_DIR}/.env")"
 
 # ---------------------------------------------------------------- apoio

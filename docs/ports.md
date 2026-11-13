@@ -70,7 +70,7 @@ Após criar as instâncias no OpenStack (REQ14–REQ16):
 
 ## App local (Docker Compose, sem a nuvem)
 
-`docker compose -f project/app/compose.yml up -d` publica só em `127.0.0.1`
+`docker compose -f app/compose.yml up -d` publica só em `127.0.0.1`
 ([`../app/README.md`](../app/README.md)). As portas fogem das do Kolla no host (8080 Horizon, 3306 MariaDB).
 
 | Serviço | Porta no host | Container |

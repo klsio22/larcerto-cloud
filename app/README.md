@@ -12,7 +12,7 @@ Este README cobre o CRUD (Compose local e papéis Ansible `web`/`db`), o MVC com
 ## Rodar local (sem a nuvem)
 
 ```bash
-./run.sh setup        # dentro de project/app/ (ou: bash project/app/run.sh setup)
+./run.sh setup        # dentro de app/ (ou: bash app/run.sh setup)
 ```
 
 Esse comando faz tudo de uma vez:
@@ -49,7 +49,7 @@ instalou. `LARCERTO_MODE=local|server` força o modo.
 | `phpstan [args]` | PHPStan nível 6 em `backend/` e `public/` (ver Testes) | só no local |
 | `test:browser [args]` | sobe a app e roda os testes no navegador (Pest + Playwright) | só no local |
 | `test` | `phpstan` e depois `test:browser` | só no local |
-| `composer [args]` | Composer do projeto de testes (`project/tests/app/`) | só no local |
+| `composer [args]` | Composer do projeto de testes (`tests/app/`) | só no local |
 | `help` | lista os comandos | igual |
 
 Na VM `web`, o Ansible copia o script e o `sql/` para `/var/www/larcerto/` e instala o
@@ -64,11 +64,11 @@ sudo /var/www/larcerto/run.sh ps
 A senha nunca vai para a linha de comando: no local, o cliente usa a senha do próprio container;
 na VM, ela é lida do `config.php` e passada por `MYSQL_PWD`.
 
-Sem o `run.sh`: `docker build --network host -t larcerto-web project/app` e depois
-`docker compose -f project/app/compose.yml up -d --no-build --wait` (com o `.env` criado a partir do
+Sem o `run.sh`: `docker build --network host -t larcerto-web app` e depois
+`docker compose -f app/compose.yml up -d --no-build --wait` (com o `.env` criado a partir do
 `.env.example`). O `up --build` do Compose v5 passa pelo bake, que recusa o `build.network: host`
 sem `--allow=network.host` (opção que o `compose up` não tem). Para apagar tudo e as imagens, use
-`docker compose -f project/app/compose.yml down -v --rmi local` e depois
+`docker compose -f app/compose.yml down -v --rmi local` e depois
 `docker image rm mariadb:12.3 php:8.4-apache php:8.4-cli larcerto-tests`.
 
 As portas 8080 e 3306 do host já são do Kolla (Horizon e MariaDB do OpenStack), por isso a app usa
@@ -85,7 +85,7 @@ O código em `public/`, `backend/` e `frontend/views/` é montado no container: 
 navegador. O SQL de `sql/` roda sozinho só na primeira subida do volume. Para voltar à semente, use
 `./run.sh db:reset`.
 
-Provas do ambiente local: `bash project/tests/app-checks.sh` (sobe o Compose e apaga os dados locais;
+Provas do ambiente local: `bash tests/app-checks.sh` (sobe o Compose e apaga os dados locais;
 o que cada prova confere está nos comentários do script).
 
 ## CSS e JavaScript (sem framework)
@@ -192,7 +192,7 @@ desconhecida, um `{id}` que não é inteiro positivo ou um imóvel que não exis
 
 ## Na nuvem
 
-`ansible-playbook site.yml` (em `project/ansible/`) faz o mesmo nas VMs:
+`ansible-playbook site.yml` (em `ansible/`) faz o mesmo nas VMs:
 
 | Peça | Local (Compose) | Nuvem (Ansible) |
 |------|-----------------|-----------------|

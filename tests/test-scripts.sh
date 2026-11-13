@@ -5,7 +5,7 @@
 # pip, python3 do venv) na frente do PATH. O sudo falso so executa `env ...`
 # (a chamada do kolla-ansible); qualquer outro comando de root e so registrado.
 #
-# Uso: bash project/tests/test-scripts.sh [teste ...]   (sem argumento: todos)
+# Uso: bash tests/test-scripts.sh [teste ...]   (sem argumento: todos)
 set -uo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -1114,8 +1114,8 @@ PY
 }
 
 test_app_dev_secret_separate() {
-  local repo="${PROJECT_DIR}/.."
-  git -C "${repo}" check-ignore -q project/app/.env || fail ".env da app nao e ignorado" || return 1
+  local repo="${PROJECT_DIR}"
+  git -C "${repo}" check-ignore -q app/.env || fail ".env da app nao e ignorado" || return 1
   grep -qx 'DB_PASSWORD=troque-esta-senha-local' "${APP}/.env.example" || fail ".env.example sem placeholder" || return 1
   grep -q '"MARIADB_PASSWORD=${DB_PASSWORD?' "${APP}/compose.yml" && grep -q '"DB_PASSWORD=${DB_PASSWORD?' "${APP}/compose.yml" \
     || fail "compose nao le a senha do .env" || return 1
@@ -1143,7 +1143,7 @@ test_app_documented() {
   done
   grep -q '├── backend/' "${r}" && grep -q '├── frontend/' "${r}" && grep -q '├── public/' "${r}" || fail "README sem a estrutura" || return 1
   grep -q '10 fotos' "${r}" && grep -q '20 MB' "${r}" && grep -q '40 MP' "${r}" || fail "README sem os limites das fotos" || return 1
-  grep -q 'docker compose -f project/app/compose.yml up' "${r}" || fail "README sem o Compose" || return 1
+  grep -q 'docker compose -f app/compose.yml up' "${r}" || fail "README sem o Compose" || return 1
   grep -q '127.0.0.1:8088' "${r}" && grep -q '127.0.0.1:3307' "${r}" || fail "README sem as portas locais" || return 1
   ! grep -qiE 'CRUD.*pendente|pendente.*CRUD' "${PROJECT_DIR}/../TASKS.md" || fail "TASKS.md ainda marca o CRUD pendente"
 }
@@ -2232,7 +2232,7 @@ test_apprun_ansible_web() {
 
 test_apprun_documented() {
   local r="${APP}/README.md" c
-  grep -q '^\./project/app/run.sh setup\|^bash project/app/run.sh setup\|^\./run.sh setup' "${r}" || fail "README sem ./run.sh setup" || return 1
+  grep -q '^\./app/run.sh setup\|^bash app/run.sh setup\|^\./run.sh setup' "${r}" || fail "README sem ./run.sh setup" || return 1
   for c in setup up down restart ps logs db:populate db:reset db:console check phpstan test:browser test composer; do
     grep -qE "^\| \`${c}( |\`)" "${r}" || fail "README sem ${c} na tabela" || return 1
   done
@@ -2386,12 +2386,12 @@ test_ansible_db_schema_seed() {
 
 test_no_secrets_tracked() {
   # Escopo: segredos desta nuvem (devops1, BD, PKI, tfstate), nao os do Kolla.
-  local repo="${PROJECT_DIR}/.."
+  local repo="${PROJECT_DIR}"
   local hits
   hits="$(git -C "${repo}" ls-files --cached --others --exclude-standard \
-    'project/cloud/secrets/*' 'project/ansible/group_vars/all/secrets.yml' 'project/ansible/files/pki/*.key' \
-    'project/ansible/files/pki/*.crt' 'project/terraform/*.tfstate*' 'project/ansible/inventory/hosts.ini' \
-    'project/app/.env')"
+    'cloud/secrets/*' 'ansible/group_vars/all/secrets.yml' 'ansible/files/pki/*.key' \
+    'ansible/files/pki/*.crt' 'terraform/*.tfstate*' 'ansible/inventory/hosts.ini' \
+    'app/.env')"
   [[ -z "${hits}" ]] || fail "segredos visiveis para o git: ${hits}" || return 1
   # Conteudo: nenhum arquivo que o git veria nas pastas da feature tem chave ou senha literal.
   local f
@@ -2402,7 +2402,7 @@ test_no_secrets_tracked() {
       fail "segredo literal em ${f}" || return 1
     fi
   done < <(git -C "${repo}" ls-files --cached --others --exclude-standard \
-    project/cloud project/terraform project/ansible project/app)
+    cloud terraform ansible app)
   ! grep -rqE 'password\s*=\s*"[^"]+"' "${PROJECT_DIR}/terraform" || fail "senha no Terraform"
 }
 
@@ -2580,7 +2580,7 @@ test_install_secrets_from_app_env() {
   grep -qxF "db_password: 's3nh%&local'" "${secrets}" || fail "db_password nao veio do .env" || return 1
   [[ "$(stat -c %a "${secrets}")" == 600 ]] || fail "secrets.yml sem modo 600" || return 1
   ! grep -qF 's3nh%&local' "${T}/out" "${T}/err" || fail "a senha apareceu na saida" || return 1
-  grep -q 'criado a partir de project/app/.env' "${T}/out" || fail "sem aviso da copia" || return 1
+  grep -q 'criado a partir de app/.env' "${T}/out" || fail "sem aviso da copia" || return 1
   # secrets.yml ainda com o valor de exemplo: troca pela senha do .env (aspas do .env saem).
   install_sandbox
   secrets="${T}/project/ansible/group_vars/all/secrets.yml"
@@ -2683,7 +2683,7 @@ test_install_step_failure_stops() {
     [[ -n "${code}" && "${RC}" -eq "${code}" && "${RC}" -ne 0 ]] \
       || fail "${step}: codigo no bloco (${code}) diferente do exit (${RC})" || return 1
     grep -q "^FALHOU na etapa ${idx}/8 (${step}), codigo" "${T}/err" || fail "${step}: bloco de falha ausente" || return 1
-    grep -q "^Para continuar: ./project/lab.sh install-app --from ${step}$" "${T}/err" || fail "${step}: linha de continuacao" || return 1
+    grep -q "^Para continuar: ./lab.sh install-app --from ${step}$" "${T}/err" || fail "${step}: linha de continuacao" || return 1
     grep -q '^Dica: ' "${T}/err" || fail "${step}: sem dica" || return 1
     [[ "$(grep -c '^==> \[' "${T}/out")" -eq "${idx}" ]] || fail "${step}: etapa depois da falha rodou" || return 1
   done
@@ -2700,7 +2700,7 @@ test_install_success_output() {
   run_lab install-app
   expect_rc 0 || return 1
   grep -q 'https://larcerto.com.br' "${T}/out" || fail "sem a URL" || return 1
-  grep -q 'project/ansible/files/pki/ca.crt' "${T}/out" || fail "sem o caminho do ca.crt" || return 1
+  grep -q 'ansible/files/pki/ca.crt' "${T}/out" || fail "sem o caminho do ca.crt" || return 1
 }
 
 test_install_from_runs_tail() {
@@ -2754,9 +2754,9 @@ test_start_app_order_no_rebuild() {
 test_start_app_needs_previous_install() {
   install_sandbox
   local f
-  for f in project/cloud/secrets/clouds.yaml project/ansible/inventory/hosts.ini; do
+  for f in cloud/secrets/clouds.yaml ansible/inventory/hosts.ini; do
     install_sandbox
-    rm -f "${T}/${f}"
+    rm -f "${T}/project/${f}"
     run_lab start-app
     expect_rc 1 || return 1
     grep -q 'install-app' "${T}/err" || fail "sem apontar para install-app (sem ${f})" || return 1
@@ -2800,12 +2800,12 @@ test_start_app_failure_continuation() {
   run_lab start-app
   expect_rc 7 || return 1
   grep -q '^FALHOU na etapa 5/5 (checks), codigo 7$' "${T}/err" || fail "bloco de falha do start-app" || return 1
-  grep -q '^Para continuar: ./project/lab.sh start-app$' "${T}/err" || fail "linha de continuacao do start-app" || return 1
+  grep -q '^Para continuar: ./lab.sh start-app$' "${T}/err" || fail "linha de continuacao do start-app" || return 1
 }
 
 test_docs_install_app() {
   local doc="${PROJECT_DIR}/docs/nuvem-larcerto.md" lab_doc="${PROJECT_DIR}/docs/lab.sh.md" first
-  first="$(awk '/^## Subir tudo/{f=1; next} f && /\.\/project\/lab\.sh/{print; exit}' "${doc}")"
+  first="$(awk '/^## Subir tudo/{f=1; next} f && /\.\/lab\.sh/{print; exit}' "${doc}")"
   [[ "${first}" == *install-app* ]] || fail "primeiro comando de Subir tudo: ${first}" || return 1
   grep -q 'terraform apply' "${doc}" || fail "passos manuais sumiram do guia" || return 1
   grep -q 'start-app' "${doc}" || fail "guia sem start-app" || return 1
@@ -3102,7 +3102,7 @@ test_cert_new_ca_backup_before_ansible() {
   [[ "$(sha256sum "${backup}/ca.crt" | cut -d' ' -f1)" == "${ca_antiga}" ]] || fail "backup nao guarda a CA antiga" || return 1
   [[ "$(stat -c %a "${backup}/ca.key")" == 600 ]] || fail "chave do backup sem modo 600" || return 1
   [[ "$(stat -c %a "${backup}/larcerto.key")" == 600 ]] || fail "chave do servidor no backup sem modo 600" || return 1
-  grep -qx 'Reimporte a CA: ./project/lab.sh cert trust' "${T}/out" || fail "sem o aviso de reimportar" || return 1
+  grep -qx 'Reimporte a CA: ./lab.sh cert trust' "${T}/out" || fail "sem o aviso de reimportar" || return 1
 }
 
 test_cert_new_ca_backup_fixes_key_mode() {
@@ -3253,7 +3253,7 @@ test_cert_help_lists_subcommands() {
 
 test_docs_cert() {
   local guia="${PROJECT_DIR}/docs/nuvem-larcerto.md" lab_doc="${PROJECT_DIR}/docs/lab.sh.md" readme="${PROJECT_DIR}/README.md"
-  grep -qF './project/lab.sh cert trust' "${guia}" || fail "guia sem cert trust" || return 1
+  grep -qF './lab.sh cert trust' "${guia}" || fail "guia sem cert trust" || return 1
   grep -qF 'cert renew' "${guia}" || fail "guia sem cert renew" || return 1
   grep -q '^| `cert`' "${lab_doc}" || fail "lab.sh.md sem a linha do cert" || return 1
   grep -qF 'cert.sh' "${lab_doc}" || fail "lab.sh.md sem o modulo cert.sh" || return 1
@@ -3301,7 +3301,7 @@ test_vms_needs_clouds_yaml() {
   rm -f "${T}/project/cloud/secrets/clouds.yaml"
   run_lab vms
   expect_rc 1 || return 1
-  grep -qF './project/cloud/bootstrap.sh' "${T}/err" || fail "sem apontar o bootstrap" || return 1
+  grep -qF './cloud/bootstrap.sh' "${T}/err" || fail "sem apontar o bootstrap" || return 1
   ! grep -q '^openstack ' "${T}/log" || fail "openstack chamado sem clouds.yaml" || return 1
 }
 
@@ -3318,7 +3318,7 @@ test_vms_api_down() {
   export FAKE_FAIL=api
   run_lab vms
   expect_rc 1 || return 1
-  grep -qF './project/lab.sh start' "${T}/err" || fail "sem apontar o lab.sh start" || return 1
+  grep -qF './lab.sh start' "${T}/err" || fail "sem apontar o lab.sh start" || return 1
 }
 
 test_vms_empty_project() {
@@ -3334,7 +3334,7 @@ test_vms_rejects_args() {
   vms_sandbox
   run_lab vms extra
   expect_rc 1 || return 1
-  grep -qxF 'Uso: ./project/lab.sh vms' "${T}/err" || fail "sem a linha de uso" || return 1
+  grep -qxF 'Uso: ./lab.sh vms' "${T}/err" || fail "sem a linha de uso" || return 1
   ! grep -q '^openstack ' "${T}/log" || fail "openstack chamado com argumento invalido" || return 1
 }
 
@@ -3371,8 +3371,8 @@ test_docs_vms() {
   local guia="${PROJECT_DIR}/docs/nuvem-larcerto.md" lab_doc="${PROJECT_DIR}/docs/lab.sh.md" readme="${PROJECT_DIR}/README.md"
   grep -q '^| `vms`' "${lab_doc}" || fail "lab.sh.md sem a linha do vms" || return 1
   grep -qF 'vms.sh' "${lab_doc}" || fail "lab.sh.md sem o modulo vms.sh" || return 1
-  grep -qF './project/lab.sh vms' "${guia}" || fail "guia sem lab.sh vms" || return 1
-  grep -qF './project/lab.sh vms' "${readme}" || fail "README sem lab.sh vms" || return 1
+  grep -qF './lab.sh vms' "${guia}" || fail "guia sem lab.sh vms" || return 1
+  grep -qF './lab.sh vms' "${readme}" || fail "README sem lab.sh vms" || return 1
 }
 
 # ---------------------------------------------------------------- libvirt do host e recreate-app
@@ -3516,13 +3516,13 @@ test_recreate_failure_stops() {
     code="$(sed -n 's/^FALHOU na etapa .*codigo \([0-9]*\)$/\1/p' "${T}/err")"
     [[ -n "${code}" && "${RC}" -eq "${code}" && "${RC}" -ne 0 ]] || fail "${step}: codigo (${code}) diferente do exit (${RC})" || return 1
     grep -q "^FALHOU na etapa ${idx}/8 (${step}), codigo" "${T}/err" || fail "${step}: bloco de falha ausente" || return 1
-    cont="./project/lab.sh install-app --from ${step}"
-    [[ "${step}" == destroy ]] && cont="./project/lab.sh recreate-app"
+    cont="./lab.sh install-app --from ${step}"
+    [[ "${step}" == destroy ]] && cont="./lab.sh recreate-app"
     grep -qxF "Para continuar: ${cont}" "${T}/err" || fail "${step}: continuacao errada: $(grep 'Para continuar' "${T}/err")" || return 1
     [[ "$(grep -c '^==> \[' "${T}/out")" -eq "${idx}" ]] || fail "${step}: etapa depois da falha rodou" || return 1
     ! grep -q '^Recriado em' "${T}/out" || fail "${step}: mostrou o tempo depois de falhar" || return 1
     if [[ "${step}" == terraform ]]; then
-      grep -q '^Dica: .*VM em ERROR.*\./project/lab\.sh vms' "${T}/err" || fail "dica do terraform sem VM em ERROR e lab.sh vms" || return 1
+      grep -q '^Dica: .*VM em ERROR.*\./lab\.sh vms' "${T}/err" || fail "dica do terraform sem VM em ERROR e lab.sh vms" || return 1
     fi
   done
 }
@@ -3532,7 +3532,7 @@ test_recreate_needs_clouds_yaml() {
   rm -f "${T}/project/cloud/secrets/clouds.yaml"
   run_lab recreate-app --yes
   expect_rc 1 || return 1
-  grep -q '^Falta: cloud/secrets/clouds.yaml do devops1 .* -> ./project/lab.sh install-app$' "${T}/err" || fail "sem a falta do clouds.yaml" || return 1
+  grep -q '^Falta: cloud/secrets/clouds.yaml do devops1 .* -> ./lab.sh install-app$' "${T}/err" || fail "sem a falta do clouds.yaml" || return 1
   ! grep -q '^terraform' "${T}/log" || fail "rodou terraform sem clouds.yaml"
 }
 
@@ -3561,7 +3561,7 @@ test_recreate_waits_api_before_destroy() {
   run_lab recreate-app --yes
   [[ "${RC}" -ne 0 ]] || fail "seguiu sem a API" || return 1
   grep -q '^FALHOU na etapa 2/8 (start)' "${T}/err" || fail "nao parou no start" || return 1
-  grep -qxF 'Para continuar: ./project/lab.sh install-app --from start' "${T}/err" || fail "continuacao errada" || return 1
+  grep -qxF 'Para continuar: ./lab.sh install-app --from start' "${T}/err" || fail "continuacao errada" || return 1
   ! grep -q '^terraform' "${T}/log" || fail "rodou terraform sem a API" || return 1
   install_sandbox
   run_lab recreate-app --yes
@@ -3580,7 +3580,7 @@ test_recreate_bad_args() {
     # shellcheck disable=SC2086
     run_lab recreate-app ${a}
     expect_rc 1 || return 1
-    grep -qx 'Uso: ./project/lab.sh recreate-app \[--yes\]' "${T}/err" || fail "${a}: sem a linha de uso" || return 1
+    grep -qx 'Uso: ./lab.sh recreate-app \[--yes\]' "${T}/err" || fail "${a}: sem a linha de uso" || return 1
     ! grep -q '^==> \[' "${T}/out" && ! grep -q '^terraform' "${T}/log" || fail "${a}: rodou etapa" || return 1
   done
   run_lab help
@@ -3590,14 +3590,14 @@ test_recreate_bad_args() {
 test_docs_recreate_app() {
   local d="${PROJECT_DIR}/docs" f
   for f in "${d}/lab.sh.md" "${d}/nuvem-larcerto.md" "${PROJECT_DIR}/README.md" "${d}/roteiro-video.md"; do
-    grep -qF './project/lab.sh recreate-app' "${f}" || fail "$(basename "${f}") sem recreate-app" || return 1
+    grep -qF './lab.sh recreate-app' "${f}" || fail "$(basename "${f}") sem recreate-app" || return 1
   done
   grep -qF 'stop_host_libvirt` (root)' "${d}/lab.sh.md" && grep -qF 'Usa root no `start`' "${d}/lab.sh.md" \
     && grep -qF 'sudo systemctl start libvirtd.socket virtlogd.socket' "${d}/lab.sh.md" \
     || fail "lab.sh.md sem o passo do libvirt, o uso de root ou o rollback"
 }
 
-# ---------------------------------------------------------------- lab.sh cert cloud (spec cloud-https)
+# ---------------------------------------------------------------- lab.sh cert cloud
 
 # Certificado do Horizon (CN cloud, SAN cloud + horizon) assinado pela CA de <dir>; grava em <saida>.
 cert_gera_cloud() {
@@ -3663,7 +3663,7 @@ test_cert_cloud_without_hosts() {
   rm -f "${T}/project/ansible/inventory/hosts.ini"
   run_lab cert cloud
   expect_rc 1 || return 1
-  grep -qxF "Falta: ${T}/project/ansible/inventory/hosts.ini -> ./project/lab.sh install-app (o inventario sai do Terraform)" "${T}/err" \
+  grep -qxF "Falta: ${T}/project/ansible/inventory/hosts.ini -> ./lab.sh install-app (o inventario sai do Terraform)" "${T}/err" \
     || fail "sem a mensagem exata do hosts.ini" || return 1
   if grep -q ansible-playbook "${T}/log"; then fail "chamou o ansible sem inventario" || return 1; fi
 }
@@ -3673,7 +3673,7 @@ test_cert_cloud_without_ca_key() {
   rm -f "${FAKE_PKI}/ca.key"
   run_lab cert cloud
   expect_rc 1 || return 1
-  grep -qxF "Falta: ${FAKE_PKI}/ca.key -> ./project/lab.sh install-app --from nuvem" "${T}/err" \
+  grep -qxF "Falta: ${FAKE_PKI}/ca.key -> ./lab.sh install-app --from nuvem" "${T}/err" \
     || fail "sem a mensagem exata do ca.key" || return 1
   if grep -q ansible-playbook "${T}/log"; then fail "chamou o ansible sem ca.key" || return 1; fi
 }
@@ -3706,7 +3706,7 @@ test_cert_cloud_frontend_missing() {
   : >"${KOLLA_NODE_CONFIG}/haproxy/services.d/horizon-https.cfg"
   run_lab cert cloud
   expect_rc 0 || return 1
-  grep -qx 'Falta o frontend 443 do Horizon: rode ./project/lab.sh deploy uma vez' "${T}/out" || fail "sem o aviso do deploy" || return 1
+  grep -qx 'Falta o frontend 443 do Horizon: rode ./lab.sh deploy uma vez' "${T}/out" || fail "sem o aviso do deploy" || return 1
   if grep -q 'docker restart' "${T}/log"; then fail "reiniciou o haproxy sem o frontend" || return 1; fi
   [[ -s "${KOLLA_NODE_CONFIG}/haproxy/haproxy.pem" ]] || fail "nao gravou o .pem" || return 1
 }
@@ -3786,7 +3786,7 @@ test_cert_cloud_new_ca_reminder() {
   export FAKE_NEW_PKI="${novo}"
   run_lab cert renew --new-ca --yes </dev/null
   expect_rc 0 || return 1
-  grep -qx 'Reemita o do Horizon: ./project/lab.sh cert cloud' "${T}/out" || fail "sem o lembrete do cloud" || return 1
+  grep -qx 'Reemita o do Horizon: ./lab.sh cert cloud' "${T}/out" || fail "sem o lembrete do cloud" || return 1
 }
 
 test_cert_cloud_status_ok() {
@@ -3821,7 +3821,7 @@ test_cert_cloud_status_not_issued() {
   cert_sandbox
   run_lab cert status
   expect_rc 0 || return 1
-  grep -qx 'Horizon (cloud): nao emitido (./project/lab.sh cert cloud)' "${T}/out" || fail "sem nao emitido" || return 1
+  grep -qx 'Horizon (cloud): nao emitido (./lab.sh cert cloud)' "${T}/out" || fail "sem nao emitido" || return 1
 }
 
 test_cert_cloud_trust_message() {
@@ -4091,7 +4091,7 @@ test_all_step_failure_stops() {
     [[ "${RC}" -eq "${want}" ]] || fail "${name}: exit ${RC}, esperado ${want}" || return 1
     grep -qx "FALHOU na etapa ${i}/15 (${name}), codigo ${want}" "${T}/err" || fail "${name}: bloco de falha" || return 1
     grep -qE '^Dica: .+' "${T}/err" || fail "${name}: sem dica" || return 1
-    grep -qx "Para continuar: ./project/lab.sh all --from ${name}" "${T}/err" || fail "${name}: linha de continuacao" || return 1
+    grep -qx "Para continuar: ./lab.sh all --from ${name}" "${T}/err" || fail "${name}: linha de continuacao" || return 1
     [[ "$(grep -cE '^==> \[[0-9]+/15\] ' "${T}/out")" -eq "${i}" ]] || fail "${name}: etapa depois da falha rodou" || return 1
   done
 }
@@ -4128,7 +4128,7 @@ test_all_rejects_args() {
     if [[ "${args}" == "--from" ]]; then
       grep -q '^Etapa desconhecida' "${T}/err" || fail "--from sem etapa: sem Etapa desconhecida" || return 1
     else
-      grep -qxF 'Uso: ./project/lab.sh all [--from <etapa>]' "${T}/err" || fail "${args}: sem Uso" || return 1
+      grep -qxF 'Uso: ./lab.sh all [--from <etapa>]' "${T}/err" || fail "${args}: sem Uso" || return 1
     fi
     if grep -q '^==> ' "${T}/out"; then fail "${args}: alguma etapa rodou" || return 1; fi
     [[ ! -s "${T}/log" ]] || fail "${args}: chamou algum comando" || return 1
@@ -4152,12 +4152,12 @@ test_all_docs() {
   local d
   for d in README.md docs/lab.sh.md docs/kolla-ansible-quickstart.md; do
     grep -qF 'all --from' "${PROJECT_DIR}/${d}" || fail "${d} sem all --from" || return 1
-    grep -iE 'm[aá]quina nova' "${PROJECT_DIR}/${d}" | grep -qF './project/lab.sh bootstrap' \
+    grep -iE 'm[aá]quina nova' "${PROJECT_DIR}/${d}" | grep -qF './lab.sh bootstrap' \
       || fail "${d} sem bootstrap para maquina nova" || return 1
   done
   run_lab help
   grep -qF 'all --from' "${T}/out" || grep -qF 'all [--from' "${T}/out" || fail "help sem all --from" || return 1
-  grep -iE 'm[aá]quina nova' "${T}/out" | grep -qF './project/lab.sh bootstrap' \
+  grep -iE 'm[aá]quina nova' "${T}/out" | grep -qF './lab.sh bootstrap' \
     || fail "help sem bootstrap para maquina nova" || return 1
 }
 

@@ -2,9 +2,9 @@
 """Comentarios do codigo da app (poucos, em ingles, so com o porque).
 
 Uso:
-  python3 project/tests/app_comments.py list   # arquivo:linha: comentario (uma linha fisica por saida)
-  python3 project/tests/app_comments.py hash   # sha256 de cada arquivo sem comentarios nem linhas em branco
-  python3 project/tests/app_comments.py pt     # comentarios com cara de portugues (sai 1 se houver)
+  python3 tests/app_comments.py list   # arquivo:linha: comentario (uma linha fisica por saida)
+  python3 tests/app_comments.py hash   # sha256 de cada arquivo sem comentarios nem linhas em branco
+  python3 tests/app_comments.py pt     # comentarios com cara de portugues (sai 1 se houver)
 APP_DIR troca a pasta da app (fora de um repositorio git, le todos os arquivos dela).
 
 PHP: comentarios pelo token_get_all do php do host. Outros arquivos: pela sintaxe de comentario

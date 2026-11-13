@@ -1,5 +1,5 @@
-# Test runner for project/app: PHP 8.4 (as the app), Composer, Node and Playwright's Chromium.
-# Lives outside project/app so the published app keeps no composer.json/vendor (REQ07).
+# Test runner for app/: PHP 8.4 (as the app), Composer, Node and Playwright's Chromium.
+# Lives outside app/ so the published app keeps no composer.json/vendor (REQ07).
 FROM php:8.4-cli
 
 RUN apt-get update \

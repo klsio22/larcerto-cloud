@@ -16,7 +16,7 @@ cmd_fix_horizon() {
   step "Remover container horizon (resolve 409 Conflict no recreate)"
   docker_cmd rm -f horizon 2>/dev/null || true
   docker_cmd ps -a --filter name=horizon --format 'table {{.Names}}\t{{.Status}}' || true
-  echo "Pronto. Recria com: ./project/lab.sh deploy"
+  echo "Pronto. Recria com: ./lab.sh deploy"
   echo "(Se Horizon já abria no browser e estava healthy, podes ignorar e só usar o login.)"
 }
 
@@ -27,10 +27,10 @@ cmd_prep() {
   cmd_fix_ovs
   echo
   echo "Prep OK. Fluxo: bootstrap → prechecks → deploy → post-deploy"
-  echo "  ./project/lab.sh bootstrap"
-  echo "  ./project/lab.sh prechecks"
-  echo "  ./project/lab.sh deploy"
-  echo "  ./project/lab.sh post-deploy"
+  echo "  ./lab.sh bootstrap"
+  echo "  ./lab.sh prechecks"
+  echo "  ./lab.sh deploy"
+  echo "  ./lab.sh post-deploy"
   echo "(deploy/all/post-deploy ja aplicam fix-wired no fim)"
 }
 
@@ -48,7 +48,7 @@ cmd_status() {
   if ip link show "${ext}" >/dev/null 2>&1; then
     ip -br link show "${ext}" | sed 's/^/    /'
   else
-    echo "    ausente — ./project/lab.sh dummy0"
+    echo "    ausente — ./lab.sh dummy0"
   fi
 
   step "${nif} (cabo / gestao)"
@@ -145,7 +145,7 @@ cmd_start() {
   kolla_ids="$("${DOCKER[@]}" ps -aq --filter label=kolla_version 2>/dev/null || true)"
   if [[ -z "${kolla_ids}" ]]; then
     echo "Nenhum container Kolla encontrado (lab.sh stop --remove ou ainda sem deploy)." >&2
-    echo "Corre: ./project/lab.sh deploy" >&2
+    echo "Corre: ./lab.sh deploy" >&2
     exit 1
   fi
 
@@ -181,7 +181,7 @@ cmd_start() {
 
   echo
   if ! cmd_ext_net; then
-    echo "AVISO: ext-net falhou; VMs sem acesso pelo host. Tente: ./project/lab.sh ext-net" >&2
+    echo "AVISO: ext-net falhou; VMs sem acesso pelo host. Tente: ./lab.sh ext-net" >&2
   fi
 
   echo

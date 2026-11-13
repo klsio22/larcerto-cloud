@@ -2,8 +2,8 @@
 # Prepara a nuvem como admin (idempotente; pode rodar de novo):
 #   rede externa public, flavor ds1G, imagem ubuntu-22.04, projeto larcerto,
 #   grupo devops + usuario devops1 (member) e quotas.
-# Gera project/cloud/secrets/clouds.yaml (fora do git) para o Terraform/CLI como devops1.
-# Uso: ./project/cloud/bootstrap.sh
+# Gera cloud/secrets/clouds.yaml (fora do git) para o Terraform/CLI como devops1.
+# Uso: ./cloud/bootstrap.sh
 set -euo pipefail
 
 CLOUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,7 +53,7 @@ if [[ ! -x "${OPENSTACK}" ]]; then
   exit 1
 fi
 if [[ ! -f "${OS_CLIENT_CONFIG_FILE}" ]]; then
-  echo "Erro: ${OS_CLIENT_CONFIG_FILE} nao existe (rode ./project/lab.sh post-deploy)" >&2
+  echo "Erro: ${OS_CLIENT_CONFIG_FILE} nao existe (rode ./lab.sh post-deploy)" >&2
   exit 1
 fi
 
@@ -69,7 +69,7 @@ for _ in $(seq 1 "${API_WAIT_TRIES}"); do
   sleep 2
 done
 if [[ "${api_ok}" -ne 1 ]]; then
-  echo "Erro: a API do OpenStack nao respondeu em $((API_WAIT_TRIES * 2))s (teste ./project/lab.sh status)" >&2
+  echo "Erro: a API do OpenStack nao respondeu em $((API_WAIT_TRIES * 2))s (teste ./lab.sh status)" >&2
   exit 1
 fi
 
@@ -153,7 +153,7 @@ os quota set --instances 10 --cores 16 --ram 8192 --floating-ips 10 "${PROJECT}"
 auth_url="$(os endpoint list --service identity --interface public -f value -c URL | head -1)"
 clouds_file="${SECRETS_DIR}/clouds.yaml"
 (umask 077 && cat >"${clouds_file}" <<EOF
-# Gerado por project/cloud/bootstrap.sh - NAO commitar.
+# Gerado por cloud/bootstrap.sh - NAO commitar.
 clouds:
   larcerto-devops1:
     auth:
@@ -171,4 +171,4 @@ EOF
 echo
 echo "Pronto. Como ${USER_NAME}:"
 echo "  export OS_CLIENT_CONFIG_FILE=${clouds_file} OS_CLOUD=larcerto-devops1"
-echo "  cd project/terraform && terraform init && terraform apply"
+echo "  cd terraform && terraform init && terraform apply"

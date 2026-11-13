@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Entrypoint único do lab AIO (dummy0, OVS host, testes, stop, fixes).
-# Uso: ./project/lab.sh <comando> [opções]
+# Uso: ./lab.sh <comando> [opções]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,7 +26,7 @@ source "${SCRIPT_DIR}/scripts/lab/vms.sh"
 
 usage() {
   cat <<'EOF'
-Uso: ./project/lab.sh <comando> [opções]
+Uso: ./lab.sh <comando> [opções]
 
 Comandos:
   help           Mostra esta ajuda (-h, --help)
@@ -44,8 +44,8 @@ Comandos:
   all            Sobe o projeto inteiro, sem apagar nada [--from <etapa>]
                  (etapas: prep prechecks deploy post-deploy prereqs start bootstrap terraform nuvem
                   app dns-host checks cert-cloud deploy-https https-cloud)
-                 Continuar de uma etapa: ./project/lab.sh all --from <etapa>
-                 Maquina nova: rode antes ./project/lab.sh bootstrap
+                 Continuar de uma etapa: ./lab.sh all --from <etapa>
+                 Maquina nova: rode antes ./lab.sh bootstrap
   install-app    Confere pre-requisitos e sobe nuvem + app em sequencia [--from <etapa>]
                  (etapas: prereqs start bootstrap terraform nuvem app dns-host checks)
   start-app      Religa uma instalacao existente (VMs SHUTOFF, dns-host, checks)
@@ -63,15 +63,15 @@ Comandos:
                  (deploy / post-deploy: depois corre fix-wired e ext-net automaticamente)
 
 Exemplos:
-  chmod +x project/lab.sh
-  ./project/lab.sh prep
-  ./project/lab.sh bootstrap && ./project/lab.sh prechecks && ./project/lab.sh deploy
-  ./project/lab.sh post-deploy
-  ./project/lab.sh test-ovs
-  ./project/lab.sh fix-wired
-  ./project/lab.sh status
-  ./project/lab.sh stop
-  ./project/lab.sh start
+  chmod +x lab.sh
+  ./lab.sh prep
+  ./lab.sh bootstrap && ./lab.sh prechecks && ./lab.sh deploy
+  ./lab.sh post-deploy
+  ./lab.sh test-ovs
+  ./lab.sh fix-wired
+  ./lab.sh status
+  ./lab.sh stop
+  ./lab.sh start
 EOF
 }
 

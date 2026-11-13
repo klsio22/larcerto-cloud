@@ -5,7 +5,7 @@ Pasta: [`../kolla-config/`](../kolla-config/).
 Os ficheiros `*-openrc.sh` e `clouds.yaml` são **gerados pelo Kolla** no `post-deploy` (marcados `# Ansible managed`). Não editar à mão — regenerar com:
 
 ```bash
-./project/lab.sh post-deploy
+./lab.sh post-deploy
 ```
 
 **Contêm senhas.** Não partilhar; preferir não commitar em repositórios públicos.
@@ -30,7 +30,7 @@ Variáveis comuns (nomes, não valores):
 ### Como usar
 
 ```bash
-source project/kolla-config/admin-openrc.sh
+source kolla-config/admin-openrc.sh
 openstack token issue
 ```
 
@@ -56,7 +56,7 @@ openstack server list
 A CLI procura `clouds.yaml` em `~/.config/openstack/` ou via `OS_CLIENT_CONFIG_FILE`. Para usar o ficheiro do projeto:
 
 ```bash
-export OS_CLIENT_CONFIG_FILE="$(pwd)/project/kolla-config/clouds.yaml"
+export OS_CLIENT_CONFIG_FILE="$(pwd)/kolla-config/clouds.yaml"
 export OS_CLOUD=kolla-admin
 ```
 
