@@ -199,3 +199,9 @@ Numa máquina nova, rode antes `./lab.sh bootstrap`. Repetir o `all` com a nuvem
 | VMs sem IP, Ansible com `No route to host` no `Esperar SSH` | AppArmor do `dnsmasq`: correção e rollback em [docs/kolla-ansible-quickstart.md](docs/kolla-ansible-quickstart.md#vms-sem-ip-apparmor-bloqueando-o-dnsmasq-do-neutron) |
 
 Ajuda: `./lab.sh help`
+
+## Uso de IA
+
+Este projeto teve apoio de um assistente de IA (Claude, da Anthropic) na escrita de scripts,
+configurações, testes e documentação. A execução e a validação no meu ambiente (OpenStack,
+VMs, DNS, CA e app) e a apresentação em vídeo foram feitas por mim.
