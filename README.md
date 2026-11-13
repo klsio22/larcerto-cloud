@@ -104,6 +104,15 @@ Para o `./lab.sh install-app` (ou o passo a passo de [`docs/nuvem-larcerto.md`](
   as configurações): `sudo apt install libnss3-tools`. Detalhes em
   [`docs/nuvem-larcerto.md`](docs/nuvem-larcerto.md#confiar-na-ca-no-navegador-sem-abrir-as-configurações).
 
+Para os testes de navegador do `tests/test-scripts.sh` (CSS, galeria, slider): Python com Playwright em
+`.venv/` na raiz do repo (fora do git):
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install playwright && .venv/bin/playwright install chromium
+```
+
+Outro Python já com Playwright: `PW_PYTHON=/caminho/bin/python bash tests/test-scripts.sh`.
+
 ## Como rodar (manual — aluno)
 
 Na raiz do repo (`larcerto-cloud`).

@@ -11,6 +11,8 @@ set -uo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REAL_PY="$(command -v python3)"
 REAL_BASH="${BASH}"
+# Python com Playwright dos testes de navegador: .venv do proprio repo (outro: PW_PYTHON=/caminho/python).
+PW_PYTHON="${PW_PYTHON:-${PROJECT_DIR}/.venv/bin/python}"
 # Os testes da app usam o docker, o php e o curl de verdade (so leitura); o sandbox troca docker e curl por falsos.
 REAL_DOCKER="$(command -v docker || true)"
 REAL_PHP="$(command -v php || true)"
@@ -1153,8 +1155,8 @@ test_app_documented() {
 # pw_run: roda o script Python da entrada padrao com o Playwright do .venv. O script ja recebe
 # `browser` aberto, `BASE` e `fotos_reais(pasta)` (troca os .webp falsos do harness por imagens reais).
 pw_run() {
-  local py="${PROJECT_DIR}/../.venv/bin/python"
-  [[ -x "${py}" ]] && "${py}" -c 'import playwright' 2>/dev/null || fail "Playwright do .venv ausente" || return 1
+  local py="${PW_PYTHON}"
+  [[ -x "${py}" ]] && "${py}" -c 'import playwright' 2>/dev/null || fail "Playwright ausente em ${py} (python3 -m venv .venv && .venv/bin/pip install playwright)" || return 1
   cat >"${T}/pw_body.py"
   "${py}" - "${T}/pw_body.py" <<'PY'
 import base64, glob, os, sys
@@ -1518,8 +1520,8 @@ test_fotos_processador_estatico() {
 }
 
 test_fotos_js_browser() {
-  local py="${PROJECT_DIR}/../.venv/bin/python"
-  [[ -x "${py}" ]] && "${py}" -c 'import playwright' 2>/dev/null || fail "Playwright do .venv ausente" || return 1
+  local py="${PW_PYTHON}"
+  [[ -x "${py}" ]] && "${py}" -c 'import playwright' 2>/dev/null || fail "Playwright ausente em ${py} (python3 -m venv .venv && .venv/bin/pip install playwright)" || return 1
   app_harness || return 1
   BASE="${BASE}" FOTOS_LOG="${T}/fotos.log" OUT="${T}" "${py}" - <<'PY' >&2 || fail "teste no navegador falhou"
 import base64, glob, json, os, re, sys
@@ -1922,8 +1924,8 @@ test_galeria_form_sem_fotos() {
 }
 
 test_galeria_form_no_js() {
-  local py="${PROJECT_DIR}/../.venv/bin/python"
-  [[ -x "${py}" ]] && "${py}" -c 'import playwright' 2>/dev/null || fail "Playwright do .venv ausente" || return 1
+  local py="${PW_PYTHON}"
+  [[ -x "${py}" ]] && "${py}" -c 'import playwright' 2>/dev/null || fail "Playwright ausente em ${py} (python3 -m venv .venv && .venv/bin/pip install playwright)" || return 1
   galeria_form_2 || return 1
   BASE="${BASE}" ID="${ID}" "${py}" - <<'PY' >&2 || fail "formulario sem JS"
 import glob, os
