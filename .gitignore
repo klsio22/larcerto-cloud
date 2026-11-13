@@ -35,3 +35,8 @@ Thumbs.db
 .~lock.*
 .idea/
 .vscode/
+
+# Senhas do Kolla (kolla-genpwd) e credenciais que o post-deploy gera: ficam so no disco
+kolla-config/passwords.yml
+kolla-config/clouds.yaml
+kolla-config/*-openrc*.sh

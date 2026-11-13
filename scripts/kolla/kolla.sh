@@ -37,6 +37,7 @@ kolla_check_prereqs() {
   fi
   if [[ ! -f "${PASSWORDS_FILE}" ]]; then
     echo "Erro: arquivo de senhas nao encontrado em: ${PASSWORDS_FILE}" >&2
+    echo "Gere com: cp ${VENV_PATH}/share/kolla-ansible/etc_examples/kolla/passwords.yml ${PASSWORDS_FILE} && ${VENV_PATH}/bin/kolla-genpwd -p ${PASSWORDS_FILE}" >&2
     exit 1
   fi
 }

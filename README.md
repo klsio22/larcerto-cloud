@@ -38,7 +38,7 @@ larcerto-cloud/
     topologia-aio.md
   kolla-config/
     globals.yml
-    passwords.yml
+    passwords.yml            # fora do git: kolla-genpwd (ver abaixo)
     clouds.yaml              # gerado no post-deploy
     admin-openrc.sh          # gerado no post-deploy
     admin-openrc-system.sh   # gerado no post-deploy
@@ -58,14 +58,20 @@ larcerto-cloud/
 | [`docs/ports.md`](docs/ports.md) | Mapa de portas VIP, containers Kolla e da app do trabalho |
 | [`notes/topologia-aio.md`](notes/topologia-aio.md) | Topologia do lab (`enp9s0` + `dummy0` + VIP) e mapa aula → passo |
 | [`kolla-config/globals.yml`](kolla-config/globals.yml) | Config Kolla: distro, interfaces, VIP, serviços enable/disable |
-| [`kolla-config/passwords.yml`](kolla-config/passwords.yml) | Senhas dos serviços (incl. `keystone_admin_password` para Horizon) |
-| [`kolla-config/clouds.yaml`](kolla-config/clouds.yaml) | Credenciais da CLI OpenStack (`OS_CLOUD=kolla-admin`); gerado no `post-deploy` |
-| [`kolla-config/admin-openrc.sh`](kolla-config/admin-openrc.sh) | `source` para exportar env vars do admin (API pública); gerado no `post-deploy` |
-| [`kolla-config/admin-openrc-system.sh`](kolla-config/admin-openrc-system.sh) | Igual, com *system scope* (admin de sistema) |
-| [`kolla-config/public-openrc.sh`](kolla-config/public-openrc.sh) | OpenRC com endpoint público |
-| [`kolla-config/public-openrc-system.sh`](kolla-config/public-openrc-system.sh) | OpenRC público + system scope |
+| `kolla-config/passwords.yml` | Senhas dos serviços (incl. `keystone_admin_password` para Horizon) |
+| `kolla-config/clouds.yaml` | Credenciais da CLI OpenStack (`OS_CLOUD=kolla-admin`); gerado no `post-deploy` |
+| `kolla-config/admin-openrc.sh` | `source` para exportar env vars do admin (API pública); gerado no `post-deploy` |
+| `kolla-config/admin-openrc-system.sh` | Igual, com *system scope* (admin de sistema) |
+| `kolla-config/public-openrc.sh` | OpenRC com endpoint público |
+| `kolla-config/public-openrc-system.sh` | OpenRC público + system scope |
 
-Ficheiros `*-openrc.sh` e `clouds.yaml` contêm **senhas** — não partilhar; preferir não os commitar em repositórios públicos.
+`passwords.yml`, `*-openrc.sh` e `clouds.yaml` contêm **senhas** e ficam fora do git (`.gitignore`). Numa máquina nova, gere o
+`passwords.yml` antes do `bootstrap`; os openrc e o `clouds.yaml` saem do `./lab.sh post-deploy`:
+
+```bash
+cp ~/venvs/kolla/share/kolla-ansible/etc_examples/kolla/passwords.yml kolla-config/
+~/venvs/kolla/bin/kolla-genpwd -p kolla-config/passwords.yml
+```
 
 ## Rede deste lab (não fica sem internet)
 

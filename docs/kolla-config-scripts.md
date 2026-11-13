@@ -16,10 +16,10 @@ Cada script limpa variáveis `OS_*` antigas e exporta as novas para a CLI OpenSt
 
 | Ficheiro | Scope | Interface | Uso típico |
 |----------|-------|-----------|------------|
-| [`admin-openrc.sh`](../kolla-config/admin-openrc.sh) | Project `admin` | internal (`OS_INTERFACE` / `OS_ENDPOINT_TYPE`) | Admin no projeto; API interna |
-| [`admin-openrc-system.sh`](../kolla-config/admin-openrc-system.sh) | System (`OS_SYSTEM_SCOPE=all`) | internal | Operações de sistema (admin de plataforma) |
-| [`public-openrc.sh`](../kolla-config/public-openrc.sh) | Project `admin` | pública (sem `OS_INTERFACE` internal) | Admin via endpoint público |
-| [`public-openrc-system.sh`](../kolla-config/public-openrc-system.sh) | System | pública | System scope via endpoint público |
+| `admin-openrc.sh` | Project `admin` | internal (`OS_INTERFACE` / `OS_ENDPOINT_TYPE`) | Admin no projeto; API interna |
+| `admin-openrc-system.sh` | System (`OS_SYSTEM_SCOPE=all`) | internal | Operações de sistema (admin de plataforma) |
+| `public-openrc.sh` | Project `admin` | pública (sem `OS_INTERFACE` internal) | Admin via endpoint público |
+| `public-openrc-system.sh` | System | pública | System scope via endpoint público |
 
 Variáveis comuns (nomes, não valores):
 
@@ -36,7 +36,7 @@ openstack token issue
 
 ## `clouds.yaml`
 
-Ficheiro: [`../kolla-config/clouds.yaml`](../kolla-config/clouds.yaml).
+Ficheiro: `../kolla-config/clouds.yaml`.
 
 Define clouds nomeadas para a CLI moderna (`OS_CLOUD`):
 
@@ -65,6 +65,6 @@ export OS_CLOUD=kolla-admin
 | Ficheiro | Papel |
 |----------|-------|
 | [`globals.yml`](../kolla-config/globals.yml) | Distro, interfaces, VIP, enable/disable de serviços |
-| [`passwords.yml`](../kolla-config/passwords.yml) | Senhas dos serviços (incl. Horizon / Keystone admin) |
+| `passwords.yml` | Senhas dos serviços (incl. Horizon / Keystone admin) |
 
 Detalhes de rede e deploy: [`../README.md`](../README.md) e [`../notes/topologia-aio.md`](../notes/topologia-aio.md).

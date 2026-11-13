@@ -211,6 +211,13 @@ test_deploy_ok_fixwired_fail_exits_0() {
   grep -q '^AVISO: fix-wired nao confirmou IPv4' "${T}/err" || fail "AVISO ausente no stderr"
 }
 
+test_kolla_missing_passwords_hint() {
+  rm -f "${T}/project/kolla-config/passwords.yml"
+  run_lab deploy
+  expect_rc 1 || return 1
+  grep -qF 'kolla-genpwd -p' "${T}/err" || fail "sem o comando que gera o passwords.yml" || return 1
+}
+
 test_kolla_failure_propagates_code() {
   export FAKE_KOLLA_RC=4
   run_lab deploy
@@ -2387,13 +2394,14 @@ test_ansible_db_schema_seed() {
 }
 
 test_no_secrets_tracked() {
-  # Escopo: segredos desta nuvem (devops1, BD, PKI, tfstate), nao os do Kolla.
+  # Escopo: segredos desta nuvem (devops1, BD, PKI, tfstate) e as senhas do Kolla (passwords.yml, openrc, clouds.yaml).
   local repo="${PROJECT_DIR}"
   local hits
   hits="$(git -C "${repo}" ls-files --cached --others --exclude-standard \
     'cloud/secrets/*' 'ansible/group_vars/all/secrets.yml' 'ansible/files/pki/*.key' \
     'ansible/files/pki/*.crt' 'terraform/*.tfstate*' 'ansible/inventory/hosts.ini' \
-    'app/.env')"
+    'app/.env' \
+    'kolla-config/passwords.yml' 'kolla-config/clouds.yaml' 'kolla-config/*-openrc*.sh')"
   [[ -z "${hits}" ]] || fail "segredos visiveis para o git: ${hits}" || return 1
   # Conteudo: nenhum arquivo que o git veria nas pastas da feature tem chave ou senha literal.
   local f
