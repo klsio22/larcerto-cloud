@@ -1,0 +1,37 @@
+# Nuvem LarCerto — segredos e arquivos gerados (nunca commitar)
+.env
+cloud/secrets/
+ansible/group_vars/all/secrets.yml
+# backup do nano (pode ter a senha)
+ansible/group_vars/all/secrets.yml.save
+ansible/files/pki/*
+!ansible/files/pki/.gitkeep
+ansible/inventory/hosts.ini
+terraform/.terraform/
+# Estado do Terraform em qualquer pasta: o terraform cria um terraform.tfstate onde for rodado
+# (ex.: um terraform destroy na raiz do repo deixa um estado vazio aqui) e o estado pode ter segredos.
+*.tfstate
+*.tfstate.*
+terraform/terraform.tfvars
+
+# Projeto de testes da app (tests/app): dependencias e saidas do Pest
+tests/app/vendor/
+tests/app/node_modules/
+tests/app/tests/Browser/Screenshots/
+tests/app/.phpunit.result.cache
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.~lock.*
+.idea/
+.vscode/
