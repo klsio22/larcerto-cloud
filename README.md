@@ -1,6 +1,6 @@
 # LarCerto Cloud — nuvem privada OpenStack (TSI36C-EAD)
 
-Labs e entrega do **Trabalho 1** (nuvem privada + app web CRUD).
+Trabalho 1 de Computação em Nuvem (UTFPR, TSI36C): nuvem privada OpenStack com Kolla-Ansible, Terraform e Ansible hospedando o CRUD LarCerto em PHP.
 
 ## Trabalho 1 — LarCerto
 
