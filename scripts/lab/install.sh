@@ -7,9 +7,11 @@ INSTALL_STEPS=(prereqs start bootstrap terraform nuvem app dns-host checks)
 START_APP_STEPS=(prereqs start vms dns-host checks)
 RECREATE_STEPS=(prereqs start destroy terraform nuvem app dns-host checks)
 ALL_STEPS=(prep prechecks deploy post-deploy prereqs start bootstrap terraform nuvem app dns-host checks cert-cloud deploy-https https-cloud)
+CLEAR_STEPS=(start destroy-app dns-host ext-net kolla app-local files trust cabo)
 
 CLOUDS_YAML="${SCRIPT_DIR}/cloud/secrets/clouds.yaml"
 HOSTS_INI="${SCRIPT_DIR}/ansible/inventory/hosts.ini"
+TFSTATE="${SCRIPT_DIR}/terraform/terraform.tfstate"
 SECRETS_YML="${SCRIPT_DIR}/ansible/group_vars/all/secrets.yml"
 VENV_DIR="${VENV_PATH:-$HOME/venvs/kolla}"
 OPENSTACK_BIN="${VENV_DIR}/bin/openstack"
@@ -266,7 +268,11 @@ run_steps() {
   local mode="$1" from="$2"
   shift 2
   local steps=("$@") total="${#steps[@]}" n=0 started=0 step rc
-  local cont
+  local cont prefix=step_ hint=step_hint
+  if [[ "${mode}" == clear ]]; then
+    prefix=clear_
+    hint=clear_hint
+  fi
   for step in "${steps[@]}"; do
     n=$((n + 1))
     [[ "${step}" == "${from}" ]] && started=1
@@ -278,7 +284,7 @@ run_steps() {
     # set -e dentro da subshell: um comando que falha no meio da etapa para a etapa.
     # Nao pode ficar num "||" (o bash desliga o set -e la dentro).
     set +e
-    ( set -e; "step_${step//-/_}" )
+    ( set -e; "${prefix}${step//-/_}" )
     rc=$?
     set -e
     if [[ "${rc}" -eq 0 ]]; then
@@ -289,6 +295,8 @@ run_steps() {
     fi
     if [[ "${mode}" == all ]]; then
       cont="./lab.sh all --from ${step}"
+    elif [[ "${mode}" == clear ]]; then
+      cont="./lab.sh clear-all --yes"
     elif [[ "${mode}" == recreate && "${step}" == destroy ]]; then
       cont="./lab.sh recreate-app"
     elif [[ "${mode}" == install || "${mode}" == recreate ]]; then
@@ -297,7 +305,7 @@ run_steps() {
       cont="./lab.sh start-app"
     fi
     echo "FALHOU na etapa ${n}/${total} (${step}), codigo ${rc}" >&2
-    echo "Dica: $(step_hint "${step}")" >&2
+    echo "Dica: $("${hint}" "${step}")" >&2
     echo "Para continuar: ${cont}" >&2
     return "${rc}"
   done
@@ -384,4 +392,148 @@ recreate_app() {
   s=$((SECONDS - TIMER_T0))
   printf 'Recriado em %dmin%02ds\n' $((s / 60)) $((s % 60))
   resumo_sucesso
+}
+
+
+# clear-all: apaga o projeto inteiro e nao sobe nada de volta. Cada etapa pula o que ja nao existe,
+# entao repetir o comando e o jeito de continuar depois de uma falha.
+clear_tem_kolla() {
+  docker_cmd ps -aq --filter label=kolla_version 2>/dev/null | grep -q .
+}
+
+# 0 = ha VMs do Terraform para apagar com a nuvem no ar; senao diz por que pula.
+clear_ha_app() {
+  if ! clear_tem_kolla; then
+    echo "pulado: nenhum container do Kolla (a nuvem ja foi apagada)"
+    return 1
+  fi
+  if [[ ! -f "${TFSTATE}" ]]; then
+    echo "pulado: sem terraform/terraform.tfstate (nenhuma VM do Terraform para apagar)"
+    return 1
+  fi
+}
+
+clear_start() {
+  clear_ha_app || return 0
+  cmd_start
+}
+
+clear_destroy_app() {
+  clear_ha_app || return 0
+  step_destroy
+}
+
+clear_dns_host() {
+  step "dns-host --down: removendo DNS de ${DNS_DOMAIN} da br-ex"
+  if ! run_as_root resolvectl revert br-ex 2>/dev/null; then
+    echo "pulado: resolvectl revert br-ex falhou (br-ex ja nao existe?)"
+  fi
+}
+
+clear_ext_net() {
+  if ! ip link show br-ex >/dev/null 2>&1; then
+    echo "pulado: br-ex nao existe"
+    return 0
+  fi
+  cmd_ext_net --down
+}
+
+clear_kolla() {
+  cmd_kolla destroy
+}
+
+clear_app_local() {
+  local ids
+  step "App local (Docker Compose larcerto): containers, volumes e imagens"
+  ids="$(docker_cmd ps -aq --filter label=com.docker.compose.project=larcerto)"
+  if [[ -n "${ids}" ]]; then
+    # shellcheck disable=SC2086
+    docker_cmd rm -f ${ids} >/dev/null
+  fi
+  docker_cmd volume rm larcerto_db_data larcerto_uploads >/dev/null 2>&1 || true
+  docker_cmd image rm larcerto-web larcerto-tests >/dev/null 2>&1 || true
+  echo "App local apagada."
+}
+
+clear_files() {
+  step "Arquivos gerados: state do Terraform, inventario, credenciais, CA e certificados"
+  rm -f "${TFSTATE}" "${TFSTATE}.backup" "${HOSTS_INI}" "${CLOUDS_YAML}" \
+    "${SCRIPT_DIR}/cloud/secrets/devops1.password" "${SCRIPT_DIR}/kolla-config/clouds.yaml" \
+    "${SCRIPT_DIR}"/kolla-config/*-openrc*.sh
+  if [[ -d "${CERT_PKI_DIR}" ]]; then
+    find "${CERT_PKI_DIR}" -mindepth 1 -maxdepth 1 ! -name .gitkeep -exec rm -rf {} +
+  fi
+  echo "Arquivos gerados apagados."
+}
+
+clear_trust() {
+  local db
+  if ! command -v certutil >/dev/null 2>&1; then
+    echo "pulado: certutil ausente"
+    return 0
+  fi
+  cert_bancos_nss
+  if [[ "${#CERT_BANCOS[@]}" -eq 0 ]]; then
+    echo "pulado: nenhum banco NSS do usuario"
+    return 0
+  fi
+  for db in "${CERT_BANCOS[@]}"; do
+    if ! certutil -L -d "${db}" -n "${CERT_NOME_NSS}" >/dev/null 2>&1; then
+      echo "${db}: nao estava"
+    elif certutil -D -d "${db}" -n "${CERT_NOME_NSS}" >/dev/null 2>&1; then
+      echo "${db}: removido"
+    else
+      echo "${db}: falhou (remova a CA LarCerto pelas configuracoes do navegador)"
+    fi
+  done
+}
+
+clear_cabo() {
+  cmd_fix_wired
+}
+
+clear_hint() {
+  case "$1" in
+    start) echo "a API da nuvem nao respondeu, e o destroy-app precisa dela; ./lab.sh status mostra o Kolla" ;;
+    destroy-app) echo "veja o erro do terraform destroy acima; repetir e seguro: ele so apaga o que ainda existe" ;;
+    ext-net) echo "veja o erro do iptables acima; ./lab.sh ext-net --down pode ser repetido" ;;
+    kolla) echo "veja o erro do kolla-ansible destroy acima; se ele reclamou de processos qemu, sobrou VM fora do Terraform: openstack server list --all-projects (com o kolla-config/clouds.yaml do admin) e apague-as" ;;
+    cabo) echo "o cabo ficou sem IPv4: confira o cabo e o DHCP e rode ./lab.sh fix-wired" ;;
+    *) echo "veja o erro acima; repetir o clear-all e seguro" ;;
+  esac
+}
+
+clear_all() {
+  local yes=0 resposta="" s
+  case "${1:-}" in
+    "") ;;
+    --yes) yes=1 ;;
+    *) echo "Uso: ./lab.sh clear-all [--yes]" >&2; return 1 ;;
+  esac
+  if [[ $# -gt 1 ]]; then
+    echo "Uso: ./lab.sh clear-all [--yes]" >&2
+    return 1
+  fi
+  if [[ "${yes}" -eq 0 ]]; then
+    echo "Isto APAGA o projeto inteiro e nao sobe nada de volta:"
+    echo "  - as VMs da app (terraform destroy) e o OpenStack (kolla-ansible destroy: containers e volumes)"
+    echo "  - a app local: containers, volumes larcerto_db_data e larcerto_uploads, imagens"
+    echo "  - terraform.tfstate, ansible/inventory/hosts.ini, cloud/secrets/, kolla-config/clouds.yaml e openrc"
+    echo "  - a CA e todos os certificados (ansible/files/pki) e a CA LarCerto nos navegadores"
+    echo "Ficam: kolla-config/passwords.yml, kolla-config/globals.yml, app/.env,"
+    echo "  ansible/group_vars/all/secrets.yml, a chave SSH e as imagens do Kolla."
+    printf 'Digite yes para apagar tudo, ou qualquer outra coisa para cancelar: '
+    read -r resposta || true
+    if [[ "${resposta}" != yes ]]; then
+      echo "Cancelado."
+      echo "Nada foi apagado."
+      return 1
+    fi
+  fi
+  MODE=clear
+  TIMER_T0="${SECONDS}"
+  run_steps clear start "${CLEAR_STEPS[@]}"
+  s=$((SECONDS - TIMER_T0))
+  printf 'Tudo apagado em %dmin%02ds\n' $((s / 60)) $((s % 60))
+  echo "Para subir de novo: ./lab.sh all"
 }

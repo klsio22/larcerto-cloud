@@ -50,7 +50,7 @@ larcerto-cloud/
 |----------|----------------|
 | [`README.md`](README.md) | Guia do lab: como subir a nuvem, rede AIO, troubleshooting |
 | [`docs/`](docs/README.md) | Documentação dos scripts: funções de `lab.sh` e dos módulos de `scripts/`, openrc/`clouds.yaml` |
-| [`lab.sh`](lab.sh) | Entrypoint único: `prep`, `bootstrap`/`deploy`/`post-deploy`, `status`, `stop`, `start`, `fix-ovs`, `fix-wired`, `fix-horizon`, `test-ovs`, `install-app`, `start-app`, `recreate-app` |
+| [`lab.sh`](lab.sh) | Entrypoint único (lista completa: `./lab.sh help`): `all`, `prep`, `bootstrap`/`prechecks`/`deploy`/`post-deploy`, `status`, `stop`, `start`, `ext-net`, `dns-host`, `install-app`, `start-app`, `recreate-app`, `clear-all`, `vms`, `cert`, `dummy0`, `fix-ovs`, `fix-wired`, `fix-horizon`, `test-ovs` |
 | [`scripts/`](scripts/) | Módulos do lab, carregados pelo `lab.sh`. Os comandos Kolla estão em `scripts/kolla/kolla.sh` (inventário + `kolla-config`); tenta root via Docker se não houver sudo NOPASSWD |
 | [`all-in-one`](all-in-one) | Inventário Ansible AIO: todos os papéis (control, network, compute…) em `localhost` |
 | [`docs/enunciado-trabalho-1.md`](docs/enunciado-trabalho-1.md) | Requisitos do Trabalho 1 (REQ01–REQ24 + substitutivo REQ25) |
@@ -183,6 +183,67 @@ Numa máquina nova, rode antes `./lab.sh bootstrap`. Repetir o `all` com a nuvem
 
 # Depois do reboot (ou para voltar a trabalhar, sem redeploy):
 ./lab.sh start
+```
+
+### 5) Apagar tudo (sem subir de volta)
+
+`./lab.sh clear-all [--yes]` **só apaga**: as VMs da app, o OpenStack (containers e volumes do Kolla), a app local
+(containers, volumes e imagens), o `terraform.tfstate`, o inventário, as credenciais geradas, a CA
+com todos os certificados e a CA nos navegadores. Não é um reinício: nada sobe de volta.
+
+```bash
+./lab.sh clear-all          # mostra o que sai e o que fica e pede para digitar yes (outra resposta cancela)
+./lab.sh clear-all --yes    # sem a pergunta
+
+# Para subir de novo, do zero (CA nova: depois, ./lab.sh cert trust):
+./lab.sh all
+```
+
+Ficam `kolla-config/passwords.yml`, `kolla-config/globals.yml`, `app/.env`,
+`ansible/group_vars/all/secrets.yml`, a chave SSH e as imagens do Kolla (o próximo `deploy` não
+baixa tudo de novo). Se uma etapa falhar, `./lab.sh clear-all --yes` continua: `start`, `destroy-app`, `dns-host`,
+`ext-net` e `trust` pulam (`pulado:`) o que já foi apagado, e as outras não falham quando o que
+apagam já não existe. Atenção: o `kolla-ansible destroy` apaga **todos** os network namespaces e as
+interfaces `tap*`, `brq*` e `vxlan*` do host, não só as do Kolla.
+
+## O que o lab muda no seu PC (e como desfazer)
+
+Para **usar** o projeto, você não configura nada no PC à mão: os comandos do `lab.sh` fazem e refazem
+estas mudanças sozinhos. A tabela serve para quem quer entender o que acontece, mudar o lab ou
+devolver o PC ao estado de antes.
+
+| Mudança | Quem faz | Depois do reboot | Desfazer à mão |
+|---------|----------|------------------|----------------|
+| Interface `dummy0` (rede externa falsa do Neutron, para não tomar o cabo) | `prep`, `start` | some; o `start` e o `all` recriam | `sudo ip link delete dummy0` |
+| `openvswitch-switch` do Ubuntu parado e desabilitado (brigaria com o OVS do Kolla) | `prep` (`fix-ovs`) | continua desabilitado | `sudo systemctl enable --now openvswitch-switch` |
+| libvirt do Ubuntu parado (brigaria com o `nova_libvirt`; as VMs nasceriam em `ERROR`) | `start`, `deploy`, `all`, `recreate-app` | volta sozinho; o `lab.sh` para de novo | nada: ele já volta no reboot |
+| VIP `192.168.1.250` no cabo, containers e volumes do Kolla, unidades `kolla-*`, `/etc/kolla/<serviço>` | `deploy` | voltam (padrão do Kolla), salvo depois de `stop` | `./lab.sh clear-all` |
+| IP `172.24.4.1/24` na `br-ex`, regras `lab-ext-net` no iptables, `net.ipv4.ip_forward=1` | `ext-net` (no fim do `deploy` e do `start`) | IP e regras somem; o `start` refaz | `./lab.sh ext-net --down` (o `ip_forward` fica: o Docker usa) |
+| DNS do host: `*.larcerto.com.br` vai para a VM `dns` (`resolvectl` na `br-ex`) | `dns-host` | some | `./lab.sh dns-host --down` |
+| CA LarCerto nos navegadores (Firefox, Brave, Chromium) | `cert trust` | fica | `./lab.sh clear-all`, ou remova a "CA LarCerto" nas configurações do navegador |
+| Docker (repositório oficial), bloco `# BEGIN ANSIBLE GENERATED HOSTS` no `/etc/hosts`, firewall do sistema desativado, perfil AppArmor do `libvirtd` desativado, `/etc/systemd/system/kolla.target` | `bootstrap` (`kolla-ansible bootstrap-servers`) | fica | ver abaixo |
+| Perfil AppArmor do `dnsmasq` desativado (só se você aplicou a correção) | à mão | fica | rollback em [docs/kolla-ansible-quickstart.md](docs/kolla-ansible-quickstart.md#vms-sem-ip-apparmor-bloqueando-o-dnsmasq-do-neutron) |
+| Imagens do Kolla (~11 GB), venv `~/venvs/kolla`, Terraform em `~/.local/bin`, imagem do Ubuntu em `~/.cache/larcerto` | `deploy`, passo 1, `install-app`, `bootstrap` da nuvem | ficam | ver abaixo |
+
+Devolver o PC ao normal, nesta ordem (só o que você quiser; nada disso é preciso para usar o lab):
+
+```bash
+./lab.sh clear-all --yes                     # VMs, OpenStack, app local, CA e arquivos gerados
+
+sudo ip link delete dummy0
+sudo systemctl enable --now openvswitch-switch   # só se você usa o OVS do Ubuntu para outra coisa
+sudo rm -f /etc/systemd/system/kolla.target && sudo systemctl daemon-reload
+sudo rm -rf /etc/kolla
+
+# Imagens do Kolla, venv, Terraform e cache da imagem do Ubuntu
+docker image rm $(docker images --filter label=kolla_version -q)
+rm -rf ~/venvs/kolla ~/.cache/larcerto ~/.local/bin/terraform
+
+# Do bootstrap: confira antes de mexer, porque podem servir a outras coisas no seu PC
+sudo nano /etc/hosts                          # apague o bloco BEGIN/END ANSIBLE GENERATED HOSTS
+sudo rm /etc/apparmor.d/disable/usr.sbin.libvirtd && sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.libvirtd
+sudo ufw enable                               # se você usava o firewall do Ubuntu
+# Docker: só remova se não usa para mais nada (sudo apt remove docker-ce docker-ce-cli containerd.io)
 ```
 
 ## Troubleshooting (via lab.sh)

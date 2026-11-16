@@ -51,6 +51,13 @@ Comandos:
   start-app      Religa uma instalacao existente (VMs SHUTOFF, dns-host, checks)
   recreate-app   Apaga e recria as VMs da app e roda os checks; mostra o tempo [--yes]
                  (etapas: prereqs start destroy terraform nuvem app dns-host checks)
+  clear-all [--yes]
+                 APAGA o projeto inteiro e nao sobe nada de volta; sem --yes, pede para digitar yes
+                 (etapas: start destroy-app dns-host ext-net kolla app-local files trust cabo)
+                 apaga: VMs, OpenStack (containers e volumes), app local, tfstate, inventario,
+                        credenciais geradas, a CA e os certificados, a CA nos navegadores
+                 ficam: passwords.yml, globals.yml, app/.env, secrets.yml, chave SSH, imagens do Kolla
+                 Para subir de novo: ./lab.sh all
   vms            VMs do projeto larcerto: status, IP privado, floating IP e linha de ssh (so leitura)
   cert           Certificado da LarCerto: status (padrão) | renew [--new-ca [--yes]] | trust | cloud
                  status: validade e se o web (e o Horizon) serve o mesmo certificado
@@ -95,6 +102,7 @@ case "${ACTION}" in
   install-app) install_app "$@" ;;
   start-app) start_app "$@" ;;
   recreate-app) recreate_app "$@" ;;
+  clear-all) clear_all "$@" ;;
   cert) cert_main "$@" ;;
   vms) cmd_vms "$@" ;;
   deploy|bootstrap|prechecks|post-deploy) cmd_kolla "${ACTION}" "$@" ;;
