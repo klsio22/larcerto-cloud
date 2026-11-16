@@ -79,6 +79,9 @@ kolla_run_step() {
   if [[ "${USE_TEST_IMAGES}" == "true" && "${kolla_step}" == "prechecks" ]]; then
     cmd+=(--use-test-images)
   fi
+  if [[ "${kolla_step}" == destroy ]]; then
+    cmd+=(--yes-i-really-really-mean-it)
+  fi
   if [[ -n "${EXTRA_VARS}" ]]; then
     cmd+=(-e "${EXTRA_VARS}")
   fi
@@ -108,7 +111,7 @@ kolla_run() {
 
   case "${action}" in
     bootstrap) steps=(bootstrap-servers) ;;
-    prechecks|deploy|post-deploy|stop) steps=("${action}") ;;
+    prechecks|deploy|post-deploy|stop|destroy) steps=("${action}") ;;
     *)
       echo "Uso: ./lab.sh {bootstrap|prechecks|deploy|post-deploy|stop-kolla}" >&2
       exit 1

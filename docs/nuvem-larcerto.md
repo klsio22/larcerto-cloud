@@ -2,6 +2,7 @@
 
 Passo a passo do Trabalho 1 sobre o Kolla AIO deste projeto. Requisitos:
 [`enunciado-trabalho-1.md`](enunciado-trabalho-1.md); a app: [`../app/README.md`](../app/README.md).
+Senhas, CLI, estado e SSH numa página só: [Comandos úteis](#comandos-úteis).
 
 ## Topologia (REQ09, "completa")
 
@@ -81,7 +82,8 @@ procura em:
 | Firefox nativo, flatpak ou snap | `cert9.db` de cada perfil |
 
 Depois **feche o navegador por completo** (todas as janelas, não só a aba) e abra de novo: ele só lê a
-CA ao iniciar. A CA é reaproveitada a cada recriação das VMs, então isso é feito uma vez só.
+CA ao iniciar. A CA é reaproveitada a cada recriação das VMs (`recreate-app`), então isso é feito
+uma vez por CA: de novo só quando o projeto sobe do zero (`clear-all` + `all`), que cria uma CA nova.
 
 Manual, se preferir: Configurações → Certificados → Autoridades → Importar
 `ansible/files/pki/ca.crt` → "confiar para identificar sites".
@@ -193,6 +195,73 @@ cd ../ansible && ~/venvs/kolla/bin/ansible-playbook site.yml
 ./lab.sh dns-host --down       # resolvedor do host volta ao normal
 ./lab.sh ext-net --down        # tira o IP da br-ex e as regras de NAT/FORWARD
 ```
+
+## Comandos úteis
+
+Cola rápida, rodando de dentro de `larcerto-cloud/`. Os comandos com senha imprimem o valor no
+terminal: não rode com a tela gravando.
+
+### Acesso e senhas
+
+| Para quê | Comando |
+|----------|---------|
+| Senha do `admin` (Horizon e CLI) | `grep keystone_admin_password kolla-config/passwords.yml` |
+| Senha do `devops1` (Horizon, projeto `larcerto`) | `cat cloud/secrets/devops1.password` |
+| Painel | `https://cloud.larcerto.com.br`, domínio `Default` |
+| App | `https://larcerto.com.br` |
+
+### CLI do OpenStack
+
+```bash
+source ~/venvs/kolla/bin/activate                   # traz o comando openstack
+
+# como admin (vê todos os projetos)
+source kolla-config/admin-openrc.sh
+openstack server list --all-projects
+
+# como devops1 (só o projeto larcerto; é o que o Terraform usa)
+export OS_CLIENT_CONFIG_FILE=$PWD/cloud/secrets/clouds.yaml OS_CLOUD=larcerto-devops1
+openstack server list
+openstack network list
+openstack floating ip list
+```
+
+### Estado do lab
+
+```bash
+./lab.sh status                # Kolla, br-ex, Horizon no VIP
+./lab.sh vms                   # VMs: status, IP privado, floating IP e a linha de ssh
+./lab.sh cert                  # CA, certificados, validade e se o servido confere
+bash tests/cloud-checks.sh     # DNS, HTTP -> HTTPS, HTTPS, PHP e banco (PASS/FAIL por item)
+docker ps --format '{{.Names}}\t{{.Status}}' | sort   # containers do Kolla
+```
+
+### Dentro das VMs
+
+```bash
+ssh -i ~/.ssh/id_ed25519 ubuntu@<floating-ip>       # a linha pronta sai no ./lab.sh vms
+sudo /var/www/larcerto/run.sh ps                    # na VM web: estado da app
+sudo /var/www/larcerto/run.sh logs                  # na VM web: logs do Apache
+sudo /var/www/larcerto/run.sh db:console            # na VM web: cliente mariadb na VM db
+```
+
+### DNS e navegador
+
+```bash
+resolvectl query larcerto.com.br        # o host resolve pela VM dns? (floating IP da web)
+./lab.sh dns-host                       # se não resolver: aponta o host para a VM dns de novo
+./lab.sh cert trust                     # navegador sem a CA: importa e depois reinicie o navegador
+```
+
+### Ciclo de vida
+
+| Situação | Comando |
+|----------|---------|
+| Subir o projeto inteiro (do zero ou continuar) | `./lab.sh all` (ou `--from <etapa>`) |
+| Depois de um reboot ou de `stop` | `./lab.sh start-app` |
+| Parar tudo (não volta no boot) | `./lab.sh stop` |
+| Recriar as VMs da app (demonstração do REQ25) | `./lab.sh recreate-app` |
+| Apagar tudo, sem subir de volta | `./lab.sh clear-all` |
 
 ## App
 

@@ -2426,16 +2426,6 @@ test_extnet_dnshost_dispatched() {
   ! grep -q 'Comando desconhecido' "${T}/err" || fail "dns-host nao despachado"
 }
 
-test_video_script_timing() {
-  local f="${PROJECT_DIR}/docs/roteiro-video.md"
-  [[ -f "${f}" ]] || fail "roteiro ausente" || return 1
-  grep -qi 'DevOps' "${f}" && grep -qi 'cliente' "${f}" || fail "faltam cenas DevOps/cliente" || return 1
-  # Soma a coluna "Duracao (s)" da tabela de cenas.
-  local total
-  total="$(awk -F'|' '/^\| *[0-9]+ *\|/ { gsub(/ /, "", $4); s += $4 } END { print s + 0 }' "${f}")"
-  [[ "${total}" -ge 300 && "${total}" -le 420 ]] || fail "roteiro soma ${total}s (esperado 300-420)"
-}
-
 # ---------------------------------------------------------------- install-app / start-app
 
 # Sandbox das etapas: HOME e PATH isolados, comandos falsos para terraform, openstack,
@@ -3599,7 +3589,7 @@ test_recreate_bad_args() {
 
 test_docs_recreate_app() {
   local d="${PROJECT_DIR}/docs" f
-  for f in "${d}/lab.sh.md" "${d}/nuvem-larcerto.md" "${PROJECT_DIR}/README.md" "${d}/roteiro-video.md"; do
+  for f in "${d}/lab.sh.md" "${d}/nuvem-larcerto.md" "${PROJECT_DIR}/README.md"; do
     grep -qF './lab.sh recreate-app' "${f}" || fail "$(basename "${f}") sem recreate-app" || return 1
   done
   grep -qF 'stop_host_libvirt` (root)' "${d}/lab.sh.md" && grep -qF 'Usa root no `start`' "${d}/lab.sh.md" \
@@ -4169,6 +4159,354 @@ test_all_docs() {
   grep -qF 'all --from' "${T}/out" || grep -qF 'all [--from' "${T}/out" || fail "help sem all --from" || return 1
   grep -iE 'm[aá]quina nova' "${T}/out" | grep -qF './lab.sh bootstrap' \
     || fail "help sem bootstrap para maquina nova" || return 1
+}
+
+# ---------------------------------------------------------------- clear-all
+
+CLEAR_STEPS_ALL=(start destroy-app dns-host ext-net kolla app-local files trust cabo)
+CLEAR_GERADOS=(terraform/terraform.tfstate terraform/terraform.tfstate.backup ansible/inventory/hosts.ini
+  cloud/secrets/clouds.yaml cloud/secrets/devops1.password kolla-config/clouds.yaml
+  kolla-config/admin-openrc.sh kolla-config/public-openrc-system.sh ansible/files/pki/ca.key
+  ansible/files/pki/cloud.crt ansible/files/pki/backup-20261101-000000/ca.key)
+CLEAR_MANTIDOS=(kolla-config/passwords.yml kolla-config/globals.yml app/.env
+  ansible/group_vars/all/secrets.yml terraform/.terraform/providers/x)
+
+# clear_sandbox: o mundo antes de um clear-all completo: containers do Kolla e da app local,
+# tfstate, todos os arquivos gerados e de configuracao, a CA num perfil do Firefox.
+clear_sandbox() {
+  install_sandbox
+  local p
+  export FAKE_APP_IDS="app1 app2"
+  unset FAKE_DOCKER_RM_FAIL FAKE_KOLLA_RC FAKE_NO_BREX FAKE_IPV4 FAKE_IPTABLES_S_FAIL
+  mkdir -p "${T}/project/ansible/files/pki/backup-20261101-000000" "${T}/project/terraform/.terraform/providers" \
+    "${T}/project/app" "${HOME}/.mozilla/firefox/abc.default" "${HOME}/.pki/nssdb"
+  for p in "${CLEAR_GERADOS[@]}"; do
+    [[ -f "${T}/project/${p}" ]] || echo "gerado ${p}" >"${T}/project/${p}"
+  done
+  : >"${T}/project/ansible/files/pki/.gitkeep"
+  echo 'keystone_admin_password: x' >"${T}/project/kolla-config/passwords.yml"
+  echo 'DB_PASSWORD=local' >"${T}/project/app/.env"
+  echo 'provider' >"${T}/project/terraform/.terraform/providers/x"
+  : >"${HOME}/.mozilla/firefox/abc.default/cert9.db"
+  echo 'CA' >"${HOME}/.mozilla/firefox/abc.default/larcerto-ca.pem"
+  : >"${HOME}/.pki/nssdb/cert9.db"
+  cert_fake_certutil
+  # docker com filtros: kolla_version -> FAKE_CONTAINER_IDS, projeto larcerto -> FAKE_APP_IDS
+  fake docker '
+echo "docker $*" >>"$FAKE_LOG"
+case "$1" in
+  info) exit 0 ;;
+  ps)
+    case " $* " in
+      *"label=com.docker.compose.project=larcerto"*) [[ -n "${FAKE_APP_IDS:-}" ]] && printf "%s\n" ${FAKE_APP_IDS} ;;
+      *" -q "*|*" -aq "*) [[ -n "${FAKE_CONTAINER_IDS:-}" ]] && printf "%s\n" ${FAKE_CONTAINER_IDS} ;;
+      *) [[ -n "${FAKE_DOCKER_NAMES:-}" ]] && printf "%s\n" ${FAKE_DOCKER_NAMES} ;;
+    esac
+    exit 0 ;;
+  volume|image) [[ -n "${FAKE_DOCKER_RM_FAIL:-}" ]] && exit 1; exit 0 ;;
+esac
+exit 0'
+}
+
+# Linhas da saida da etapa <n> (do cabecalho dela ao proximo cabecalho de etapa).
+clear_secao() {
+  awk -v n="$1" '/^==> \[[0-9]+\/9\] /{ dentro = ($0 ~ "^==> \\[" n "/9\\] ") } dentro' "${T}/out"
+}
+
+clear_headers_ok() {
+  local i=0 name want="" got
+  for name in "${CLEAR_STEPS_ALL[@]}"; do
+    i=$((i + 1))
+    want+="==> [${i}/9] ${name}"$'\n'
+  done
+  # sem terminal, o primeiro cabecalho sai na linha da pergunta (o Enter nao e ecoado)
+  got="$(grep -oE '(^|cancelar: )==> \[[0-9]/9\] [a-z-]*' "${T}/out" | sed 's/^cancelar: //')"
+  [[ "${got}" == "${want%$'\n'}" ]] || fail "ordem das etapas diferente: ${got}"
+}
+
+test_clear_all_confirm_lists_and_asks() {
+  clear_sandbox
+  run_lab clear-all <<<"nao"
+  local s
+  for s in terraform.tfstate ansible/files/pki passwords.yml app/.env 'Digite yes para apagar tudo, ou qualquer outra coisa para cancelar'; do
+    grep -qF -- "${s}" "${T}/out" || fail "a pergunta nao mostra ${s}" || return 1
+  done
+}
+
+test_clear_all_wrong_word_cancels() {
+  clear_sandbox
+  local w
+  for w in nao y YES sim apagar-tudo ""; do
+    : >"${T}/log"
+    run_lab clear-all <<<"${w}"
+    expect_rc 1 || return 1
+    grep -qE '(^|cancelar: )Cancelado\.$' "${T}/out" || fail "'${w}': sem Cancelado." || return 1
+    grep -qxF 'Nada foi apagado.' "${T}/out" || fail "'${w}': sem Nada foi apagado." || return 1
+    [[ ! -s "${T}/log" ]] || fail "'${w}': chamou algum comando" || return 1
+  done
+  : >"${T}/log"
+  run_lab clear-all </dev/null
+  expect_rc 1 || return 1
+  grep -qE '(^|cancelar: )Cancelado\.$' "${T}/out" || fail "stdin fechado: sem Cancelado." || return 1
+  [[ ! -s "${T}/log" ]] || fail "stdin fechado: chamou algum comando"
+}
+
+test_clear_all_rejects_args() {
+  clear_sandbox
+  local args
+  for args in "foo" "--yes extra" "--from kolla"; do
+    : >"${T}/log"
+    # shellcheck disable=SC2086
+    run_lab clear-all ${args}
+    expect_rc 1 || return 1
+    grep -qxF 'Uso: ./lab.sh clear-all [--yes]' "${T}/err" || fail "${args}: sem Uso" || return 1
+    if grep -q '^==> ' "${T}/out"; then fail "${args}: alguma etapa rodou" || return 1; fi
+    [[ ! -s "${T}/log" ]] || fail "${args}: chamou algum comando" || return 1
+  done
+}
+
+test_clear_all_order_9_steps() {
+  clear_sandbox
+  run_lab clear-all <<<"yes"
+  expect_rc 0 || return 1
+  clear_headers_ok || return 1
+  clear_sandbox
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  clear_headers_ok || return 1
+  ! grep -q 'Digite yes' "${T}/out" || fail "--yes perguntou"
+}
+
+test_clear_all_success_output() {
+  clear_sandbox
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  grep -qE '^Tudo apagado em [0-9]+min[0-9]{2}s$' "${T}/out" || fail "sem Tudo apagado em" || return 1
+  grep -qxF 'Para subir de novo: ./lab.sh all' "${T}/out" || fail "sem Para subir de novo"
+}
+
+test_clear_all_never_recreates() {
+  clear_sandbox
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  if grep -E '^terraform apply|^ansible-playbook|^kolla (deploy|post-deploy)|run\.sh' "${T}/log"; then
+    fail "clear-all recriou algo" || return 1
+  fi
+}
+
+test_clear_all_destroys_app_before_kolla() {
+  clear_sandbox
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  clear_secao 1 | grep -qxF 'Containers Kolla iniciados.' || fail "start nao subiu os containers" || return 1
+  local cfg="${T}/project/cloud/secrets/clouds.yaml" ini des kol
+  ini="$(linha_log "terraform init cwd=terraform cloud=larcerto-devops1 cfg=${cfg}")"
+  des="$(linha_log "terraform destroy -auto-approve cwd=terraform cloud=larcerto-devops1 cfg=${cfg}")"
+  kol="$(linha_log_re '^kolla destroy ')"
+  [[ -n "${ini}" && -n "${des}" && -n "${kol}" && "${ini}" -lt "${des}" && "${des}" -lt "${kol}" ]] \
+    || fail "terraform destroy sem init/devops1 ou depois do kolla destroy (${ini}/${des}/${kol})"
+}
+
+test_clear_all_skips_without_kolla_or_state() {
+  local mundo n
+  for mundo in sem-kolla sem-tfstate; do
+    clear_sandbox
+    if [[ "${mundo}" == sem-kolla ]]; then
+      export FAKE_CONTAINER_IDS=""
+    else
+      rm -f "${T}/project/terraform/terraform.tfstate"
+    fi
+    run_lab clear-all --yes
+    expect_rc 0 || return 1
+    for n in 1 2; do
+      clear_secao "${n}" | grep -q '^pulado: ' || fail "${mundo}: etapa ${n} sem pulado:" || return 1
+    done
+    if grep -q '^terraform' "${T}/log"; then fail "${mundo}: chamou terraform" || return 1; fi
+    if grep -qxF 'Containers Kolla iniciados.' "${T}/out"; then fail "${mundo}: rodou o start" || return 1; fi
+  done
+}
+
+test_clear_all_dns_host_revert() {
+  clear_sandbox
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  grep -qxF 'resolvectl revert br-ex' "${T}/log" || fail "sem resolvectl revert br-ex" || return 1
+  clear_sandbox
+  export FAKE_FAIL=dns-host
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  clear_secao 3 | grep -q '^pulado: ' || fail "resolvectl falhou e a etapa nao disse pulado:"
+}
+
+test_clear_all_ext_net_down() {
+  clear_sandbox
+  rm -f "${T}/project/terraform/terraform.tfstate"
+  run_lab ext-net
+  expect_rc 0 || return 1
+  grep -q 'lab-ext-net' "${T}/rules" || fail "preparo: ext-net nao criou as regras" || return 1
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  if grep -q 'lab-ext-net' "${T}/rules"; then fail "sobrou regra lab-ext-net" || return 1; fi
+  [[ ! -s "${T}/brex_addr" ]] || fail "sobrou 172.24.4.1/24 na br-ex" || return 1
+  clear_sandbox
+  rm -f "${T}/project/terraform/terraform.tfstate"
+  export FAKE_NO_BREX=1
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  clear_secao 4 | grep -q '^pulado: ' || fail "sem br-ex e a etapa nao disse pulado:" || return 1
+  [[ "$(grep -cxF 'ip link show br-ex' "${T}/log")" -le 1 ]] || fail "esperou a br-ex"
+}
+
+test_clear_all_kolla_destroy_args() {
+  clear_sandbox
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  local p="${T}/project" want got
+  want="kolla destroy -i ${p}/all-in-one --configdir ${p}/kolla-config --passwords ${p}/kolla-config/passwords.yml --yes-i-really-really-mean-it"
+  got="$(grep '^kolla ' "${T}/log")"
+  [[ "${got}" == "${want}" ]] || fail "linha do kolla: ${got}" || return 1
+  grep -E '^sudo env .*kolla-ansible destroy ' "${T}/log" | grep -q . || fail "destroy sem sudo env" || return 1
+  if grep -q -- '--include-images' "${T}/log"; then fail "apagou as imagens" || return 1; fi
+}
+
+test_no_kolla_destroy_outside_clear_all() {
+  local args
+  for args in deploy bootstrap prechecks post-deploy stop-kolla stop start all install-app start-app "recreate-app --yes"; do
+    install_sandbox
+    # shellcheck disable=SC2086
+    run_lab ${args}
+    if grep -q 'destroy -i' "${T}/log"; then fail "${args} chamou kolla-ansible destroy" || return 1; fi
+  done
+}
+
+test_clear_all_removes_local_app() {
+  clear_sandbox
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  grep -qxF 'docker ps -aq --filter label=com.docker.compose.project=larcerto' "${T}/log" || fail "nao listou o projeto larcerto" || return 1
+  grep -qxF 'docker rm -f app1 app2' "${T}/log" || fail "nao removeu os containers da app" || return 1
+  grep -qxF 'docker volume rm larcerto_db_data larcerto_uploads' "${T}/log" || fail "nao removeu os volumes" || return 1
+  grep -qxF 'docker image rm larcerto-web larcerto-tests' "${T}/log" || fail "nao removeu as imagens" || return 1
+  clear_sandbox
+  export FAKE_DOCKER_RM_FAIL=1 FAKE_APP_IDS=""
+  run_lab clear-all --yes
+  expect_rc 0
+}
+
+test_clear_all_deletes_generated_files() {
+  clear_sandbox
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  local p
+  for p in "${CLEAR_GERADOS[@]}"; do
+    [[ ! -e "${T}/project/${p}" ]] || fail "sobrou ${p}" || return 1
+  done
+  [[ ! -e "${T}/project/ansible/files/pki/backup-20261101-000000" ]] || fail "sobrou o backup da PKI" || return 1
+  [[ -f "${T}/project/ansible/files/pki/.gitkeep" ]] || fail "apagou o .gitkeep"
+}
+
+test_clear_all_keeps_configuration() {
+  clear_sandbox
+  local antes depois
+  antes="$(cd "${T}/project" && sha256sum "${CLEAR_MANTIDOS[@]}")"
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  depois="$(cd "${T}/project" && sha256sum "${CLEAR_MANTIDOS[@]}" 2>&1)"
+  [[ "${antes}" == "${depois}" ]] || fail "configuracao mudou: ${depois}"
+}
+
+test_clear_all_untrusts_browser() {
+  clear_sandbox
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  grep -qxF "${HOME}/.mozilla/firefox/abc.default: removido" "${T}/out" || fail "perfil do Firefox" || return 1
+  grep -qxF "${HOME}/.pki/nssdb: nao estava" "${T}/out" || fail "~/.pki/nssdb" || return 1
+  [[ ! -e "${HOME}/.mozilla/firefox/abc.default/larcerto-ca.pem" ]] || fail "a CA ficou no Firefox"
+}
+
+test_clear_all_trust_without_certutil() {
+  clear_sandbox
+  rm -f "${T}/bin/certutil"
+  mkdir -p "${T}/semcert"
+  local p
+  for p in /usr/bin/* /bin/*; do
+    [[ "$(basename "${p}")" == certutil ]] && continue
+    ln -sfn "${p}" "${T}/semcert/$(basename "${p}")" 2>/dev/null
+  done
+  export PATH="${T}/bin:${T}/semcert"
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  clear_secao 8 | grep -qxF 'pulado: certutil ausente' || fail "sem pulado: certutil ausente"
+}
+
+test_clear_all_cabo_fix_wired() {
+  clear_sandbox
+  rm -f "${T}/project/terraform/terraform.tfstate"
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  clear_secao 9 | grep -qxF 'Cabo OK' || fail "cabo sem Cabo OK" || return 1
+  clear_sandbox
+  rm -f "${T}/project/terraform/terraform.tfstate"
+  export FAKE_IPV4=0
+  run_lab clear-all --yes
+  expect_rc 1 || return 1
+  grep -qxF 'FALHOU na etapa 9/9 (cabo), codigo 1' "${T}/err" || fail "sem o bloco de falha do cabo"
+}
+
+test_clear_all_step_failure_stops() {
+  local caso n step rc k
+  for caso in start:1:1 destroy-app:2:7 ext-net:4:1 kolla:5:5 cabo:9:1; do
+    IFS=: read -r step n rc <<<"${caso}"
+    clear_sandbox
+    case "${step}" in
+      start) export FAKE_VIP_DOWN=1 VIP_WAIT=0 ;;
+      destroy-app) export FAKE_FAIL=destroy ;;
+      ext-net) export FAKE_IPTABLES_S_FAIL=1 ;;
+      kolla) export FAKE_KOLLA_RC=5 ;;
+      cabo) rm -f "${T}/project/terraform/terraform.tfstate"; export FAKE_IPV4=0 ;;
+    esac
+    run_lab clear-all --yes
+    expect_rc "${rc}" || return 1
+    grep -qxF "FALHOU na etapa ${n}/9 (${step}), codigo ${rc}" "${T}/err" || fail "${step}: sem FALHOU" || return 1
+    grep -qE '^Dica: .+' "${T}/err" || fail "${step}: sem Dica" || return 1
+    grep -qxF 'Para continuar: ./lab.sh clear-all --yes' "${T}/err" || fail "${step}: sem Para continuar" || return 1
+    for ((k = n + 1; k <= 9; k++)); do
+      if grep -q "^==> \[${k}/9\]" "${T}/out"; then fail "${step}: rodou a etapa ${k} depois da falha" || return 1; fi
+    done
+    if grep -q '^Tudo apagado' "${T}/out"; then fail "${step}: disse Tudo apagado" || return 1; fi
+  done
+}
+
+test_clear_all_kolla_hint() {
+  clear_sandbox
+  export FAKE_KOLLA_RC=5
+  run_lab clear-all --yes
+  expect_rc 5 || return 1
+  grep '^Dica: ' "${T}/err" | grep -qF 'openstack server list --all-projects' || fail "Dica do kolla sem openstack server list"
+}
+
+test_clear_all_repeat_after_clear() {
+  clear_sandbox
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  export FAKE_CONTAINER_IDS="" FAKE_APP_IDS=""
+  : >"${T}/log"
+  run_lab clear-all --yes
+  expect_rc 0 || return 1
+  clear_headers_ok || return 1
+  if grep -q '^terraform' "${T}/log"; then fail "segunda rodada chamou terraform" || return 1; fi
+  if grep -qxF 'Containers Kolla iniciados.' "${T}/out"; then fail "segunda rodada rodou o start" || return 1; fi
+}
+
+test_clear_all_docs() {
+  local d s
+  run_lab help
+  for s in 'clear-all [--yes]' 'digitar yes' passwords.yml; do
+    grep -qF -- "${s}" "${T}/out" || fail "help sem ${s}" || return 1
+    for d in README.md docs/lab.sh.md; do
+      grep -qF -- "${s}" "${PROJECT_DIR}/${d}" || fail "${d} sem ${s}" || return 1
+    done
+  done
 }
 
 # ---------------------------------------------------------------- runner

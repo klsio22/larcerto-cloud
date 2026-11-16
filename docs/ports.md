@@ -3,7 +3,7 @@
 Mapa das portas esperadas neste lab. Fonte: defaults do Kolla-Ansible
 (`group_vars/all` no venv) alinhados a [`kolla-config/globals.yml`](../kolla-config/globals.yml).
 
-- VIP / Horizon: `http://192.168.1.250` (porta 80 via HAProxy)
+- VIP / Horizon: `http://192.168.1.250` (porta 80 via HAProxy) e `https://cloud.larcerto.com.br` (443, `./lab.sh cert cloud`)
 - `network_interface`: `enp9s0` (cabo — gerenciamento; internet do host permanece)
 - `neutron_external_interface`: `dummy0` (não usa o cabo)
 
@@ -16,7 +16,7 @@ Após o primeiro `deploy`, confira com `docker ps` e `ss -tlnp` e ajuste este ar
 | Serviço | Porta | Protocolo | Container típico | Uso |
 |---------|------:|-----------|------------------|-----|
 | Horizon | 80 | TCP | `horizon` (via `haproxy`) | Dashboard |
-| Horizon TLS | 443 | TCP | `haproxy` | Só se TLS for habilitado (hoje off) |
+| Horizon HTTPS | 443 | TCP | `haproxy` | `cloud.larcerto.com.br`: frontend custom `horizon-https.cfg` (só o Horizon; as APIs seguem em HTTP) |
 | Keystone | 5000 | TCP | `keystone` / `haproxy` | Autenticação |
 | Glance | 9292 | TCP | `glance_api` | Imagens |
 | Nova API | 8774 | TCP | `nova_api` | Compute |
@@ -64,9 +64,9 @@ Após criar as instâncias no OpenStack (REQ14–REQ16):
 |---------|------:|------|
 | HTTP | 80 | VM web |
 | HTTPS | 443 | VM web |
-| MariaDB (app) | 3306 | VM DB (rede Neutron) |
+| MariaDB (app) | 3306 | VM db, só a partir da `larcerto-net` (a VM web) |
 | SSH | 22 | VMs (administração) |
-| DNS | 53 | VM/serviço DNS (REQ10, se usado) |
+| DNS | 53 | VM dns (bind9, REQ10) |
 
 ## App local (Docker Compose, sem a nuvem)
 
