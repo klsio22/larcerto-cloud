@@ -8,11 +8,11 @@ Passo a passo da nuvem do trabalho (rede externa, projeto, VMs, DNS, CA, HTTPS):
 
 ## Fontes
 
-1. **Videoaulas 06–10** da disciplina (Computação em Nuvem); o mapa aula → passo está em [`notes/topologia-aio.md`](notes/topologia-aio.md)
+1. **Videoaulas 06–10** da disciplina (Computação em Nuvem); o mapa aula → passo está em [`docs/topologia-aio.md`](docs/topologia-aio.md)
 2. **Enunciado** — [`docs/enunciado-trabalho-1.md`](docs/enunciado-trabalho-1.md) (REQ01–REQ24; substitutivo + REQ25)
 3. **OpenStack com containers** — [`docs/kolla-ansible-quickstart.md`](docs/kolla-ansible-quickstart.md)
 4. **Portas dos containers** — [`docs/ports.md`](docs/ports.md)
-5. **Topologia AIO** — [`notes/topologia-aio.md`](notes/topologia-aio.md)
+5. **Topologia AIO** — [`docs/topologia-aio.md`](docs/topologia-aio.md)
 
 Não inventar passos além das aulas e do enunciado. Se faltar transcrição, avisar.
 
@@ -31,11 +31,11 @@ larcerto-cloud/
   app/                       # CRUD LarCerto em MVC: backend/, frontend/, public/, sql/ + compose.yml (ambiente local)
   docs/                      # toda a documentação de apoio
     enunciado-trabalho-1.md
+    nuvem-larcerto.md        # passo a passo do Trabalho 1
+    topologia-aio.md         # topologia (REQ09) e mapa aula → passo
     kolla-ansible-quickstart.md
     ports.md
     lab.sh.md · kolla-config-scripts.md · horizon-theme-lux.md
-  notes/
-    topologia-aio.md
   kolla-config/
     globals.yml
     passwords.yml            # fora do git: kolla-genpwd (ver abaixo)
@@ -56,7 +56,7 @@ larcerto-cloud/
 | [`docs/enunciado-trabalho-1.md`](docs/enunciado-trabalho-1.md) | Requisitos do Trabalho 1 (REQ01–REQ24 + substitutivo REQ25) |
 | [`docs/kolla-ansible-quickstart.md`](docs/kolla-ansible-quickstart.md) | Notas/referência do quickstart Kolla (contexto OpenStack em containers) |
 | [`docs/ports.md`](docs/ports.md) | Mapa de portas VIP, containers Kolla e da app do trabalho |
-| [`notes/topologia-aio.md`](notes/topologia-aio.md) | Topologia do lab (`enp9s0` + `dummy0` + VIP) e mapa aula → passo |
+| [`docs/topologia-aio.md`](docs/topologia-aio.md) | Topologia do lab (host, Kolla, projeto `larcerto` e as 4 VMs; REQ09) e mapa aula → passo |
 | [`kolla-config/globals.yml`](kolla-config/globals.yml) | Config Kolla: distro, interfaces, VIP, serviços enable/disable |
 | `kolla-config/passwords.yml` | Senhas dos serviços (incl. `keystone_admin_password` para Horizon) |
 | `kolla-config/clouds.yaml` | Credenciais da CLI OpenStack (`OS_CLOUD=kolla-admin`); gerado no `post-deploy` |
@@ -81,7 +81,7 @@ cp ~/venvs/kolla/share/kolla-ansible/etc_examples/kolla/passwords.yml kolla-conf
 | `neutron_external_interface` | `dummy0` | Externa do Neutron (falsa; não toma o cabo) |
 | `kolla_internal_vip_address` | `192.168.1.250` | Horizon/APIs (confirmar IP livre na LAN) |
 
-Detalhes: [`notes/topologia-aio.md`](notes/topologia-aio.md).
+Detalhes: [`docs/topologia-aio.md`](docs/topologia-aio.md).
 
 ## Requisitos
 

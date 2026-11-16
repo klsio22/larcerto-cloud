@@ -67,4 +67,4 @@ export OS_CLOUD=kolla-admin
 | [`globals.yml`](../kolla-config/globals.yml) | Distro, interfaces, VIP, enable/disable de serviços |
 | `passwords.yml` | Senhas dos serviços (incl. Horizon / Keystone admin) |
 
-Detalhes de rede e deploy: [`../README.md`](../README.md) e [`../notes/topologia-aio.md`](../notes/topologia-aio.md).
+Detalhes de rede e deploy: [`../README.md`](../README.md) e [`topologia-aio.md`](topologia-aio.md).
