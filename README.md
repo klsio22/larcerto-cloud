@@ -6,6 +6,21 @@ Trabalho 1 de Computação em Nuvem (UTFPR, TSI36C): nuvem privada OpenStack com
 
 Passo a passo da nuvem do trabalho (rede externa, projeto, VMs, DNS, CA, HTTPS): [`docs/nuvem-larcerto.md`](docs/nuvem-larcerto.md). O CRUD (PHP 8.4 + MariaDB 12.3, MVC, CSS e JavaScript próprios, fotos dos imóveis) roda também sem a nuvem, num Docker Compose local (`bash app/run.sh setup`; o mesmo script serve na VM `web`): [`app/README.md`](app/README.md).
 
+### Endereços (nuvem e app no ar)
+
+| O quê | Endereço | Login |
+|-------|----------|-------|
+| App LarCerto | https://larcerto.com.br (http redireciona para https) | — |
+| Painel OpenStack (Horizon) | https://cloud.larcerto.com.br | `devops1` (projeto `larcerto`); senha em `cloud/secrets/devops1.password` |
+| Horizon como admin | https://cloud.larcerto.com.br | `admin`; senha `keystone_admin_password` em `kolla-config/passwords.yml` |
+
+Os nomes resolvem pela VM `dns` (`./lab.sh dns-host`, feito pelo `all` e pelo `start-app`) e o cadeado
+depende da CA LarCerto no navegador (`./lab.sh cert trust`). O IP do VIP, `http://192.168.1.250`, só
+serve antes disso: logo depois do `deploy`, quando ainda não existem as VMs `dns` e `ca`.
+
+Senhas, CLI do OpenStack (admin e `devops1`), estado do lab e SSH nas VMs:
+[Comandos úteis](docs/nuvem-larcerto.md#comandos-úteis).
+
 ## Fontes
 
 1. **Videoaulas 06–10** da disciplina (Computação em Nuvem); o mapa aula → passo está em [`docs/topologia-aio.md`](docs/topologia-aio.md)
@@ -23,13 +38,14 @@ larcerto-cloud/
   README.md
   lab.sh
   all-in-one                 # inventário Ansible (usado pelo scripts/kolla/kolla.sh)
-  scripts/                   # módulos do lab: common.sh, lab/ (rede, ovs, ciclo), kolla/ (kolla.sh, zorin_facts.py)
+  scripts/                   # módulos do lab: common.sh, lab/ (rede, ovs, ciclo, install, cert, vms), kolla/ (kolla.sh, zorin_facts.py)
   tests/                     # test-scripts.sh (sem tocar no host), app-checks.sh (Compose local) e cloud-checks.sh (nuvem montada)
   cloud/bootstrap.sh         # admin: rede public, flavor, imagem, projeto larcerto, devops1
   terraform/                 # infra do projeto larcerto (4 VMs, redes, SGs, floating IPs)
   ansible/                   # configuração das VMs: dns, ca, db, web
   app/                       # CRUD LarCerto em MVC: backend/, frontend/, public/, sql/ + compose.yml (ambiente local)
   docs/                      # toda a documentação de apoio
+    README.md                # índice
     enunciado-trabalho-1.md
     nuvem-larcerto.md        # passo a passo do Trabalho 1
     topologia-aio.md         # topologia (REQ09) e mapa aula → passo
@@ -55,6 +71,7 @@ larcerto-cloud/
 | [`all-in-one`](all-in-one) | Inventário Ansible AIO: todos os papéis (control, network, compute…) em `localhost` |
 | [`docs/enunciado-trabalho-1.md`](docs/enunciado-trabalho-1.md) | Requisitos do Trabalho 1 (REQ01–REQ24 + substitutivo REQ25) |
 | [`docs/kolla-ansible-quickstart.md`](docs/kolla-ansible-quickstart.md) | Notas/referência do quickstart Kolla (contexto OpenStack em containers) |
+| [`docs/nuvem-larcerto.md`](docs/nuvem-larcerto.md) | Passo a passo do Trabalho 1: do lab ligado até `https://larcerto.com.br` |
 | [`docs/ports.md`](docs/ports.md) | Mapa de portas VIP, containers Kolla e da app do trabalho |
 | [`docs/topologia-aio.md`](docs/topologia-aio.md) | Topologia do lab (host, Kolla, projeto `larcerto` e as 4 VMs; REQ09) e mapa aula → passo |
 | [`kolla-config/globals.yml`](kolla-config/globals.yml) | Config Kolla: distro, interfaces, VIP, serviços enable/disable |
@@ -166,9 +183,23 @@ Atalho para subir o projeto inteiro de uma vez (OpenStack, nuvem, app e HTTPS do
 
 Numa máquina nova, rode antes `./lab.sh bootstrap`. Repetir o `all` com a nuvem no ar corta a rede das VMs até o `deploy` recriar o OVS.
 
+**Depois do `all`: confiar no certificado.** Para o HTTPS de `https://larcerto.com.br` e
+`https://cloud.larcerto.com.br` funcionar no navegador (cadeado, sem aviso), recomenda-se rodar:
+
+```bash
+./lab.sh cert trust   # importa a CA LarCerto no Firefox, Brave e Chromium, sem sudo
+```
+
+e depois **fechar e abrir o navegador de novo** (ele só lê CAs novas ao reiniciar). O `all` cria a
+CA LarCerto, mas não a instala no navegador. Por isso o `cert trust` é necessário na primeira vez e
+sempre que o projeto subir do zero, porque aí a CA é nova. Rodar de novo com a CA já instalada é
+seguro: ele responde `ja estava`. Sem esse passo, o Firefox mostra *Warning: Security Risk* e, por
+causa do HSTS da app, nem oferece a opção de continuar. Para ver a CA e os certificados servidos:
+`./lab.sh cert`.
+
 ### 3) Testar
 
-1. Browser: **http://192.168.1.250** (Horizon) — user `admin`, senha em `kolla-config/passwords.yml` (`keystone_admin_password`)
+1. Browser: **https://larcerto.com.br** (app) e **https://cloud.larcerto.com.br** (Horizon); logins na seção [Endereços](#endereços-nuvem-e-app-no-ar). Só com o Kolla no ar (sem as VMs `dns` e `ca`): `http://192.168.1.250`
 2. Estado rápido: `./lab.sh status` (Kolla); VMs da nuvem: `./lab.sh vms`; apagar e recriar a infra da app (REQ25): `./lab.sh recreate-app`
 3. OVS só: `./lab.sh test-ovs`
 4. Portas: [`docs/ports.md`](docs/ports.md)
@@ -255,7 +286,7 @@ sudo ufw enable                               # se você usava o firewall do Ubu
 | Cabo sem IP / “getting IP configuration” | Já corre no fim de `deploy`/`all`/`post-deploy`; se voltar: `./lab.sh fix-wired` |
 | Deploy falha em horizon `409 Conflict` (nome já em uso) | `./lab.sh fix-horizon` → `./lab.sh deploy` |
 | Horizon já abre no browser | Ignora o 409; usa o login |
-| Navegador não confia no HTTPS da LarCerto, ou o certificado venceu / o `web` serve outro | `./lab.sh cert` (ver); `./lab.sh cert trust` (confiar na CA); `./lab.sh cert renew` (emitir de novo) |
+| Navegador não confia no HTTPS da LarCerto (Firefox: *Warning: Security Risk* / HSTS em `larcerto.com.br`), ou o certificado venceu / o `web` serve outro | `./lab.sh cert` (ver); `./lab.sh cert trust` (confiar na CA); `./lab.sh cert renew` (emitir de novo) |
 | Horizon só em HTTP; quero `https://cloud.larcerto.com.br` | `./lab.sh cert cloud` e, uma vez, `./lab.sh deploy` ([guia](docs/nuvem-larcerto.md#https-do-horizon-httpscloudlarcertocombr)) |
 | VMs sem IP, Ansible com `No route to host` no `Esperar SSH` | AppArmor do `dnsmasq`: correção e rollback em [docs/kolla-ansible-quickstart.md](docs/kolla-ansible-quickstart.md#vms-sem-ip-apparmor-bloqueando-o-dnsmasq-do-neutron) |
 
