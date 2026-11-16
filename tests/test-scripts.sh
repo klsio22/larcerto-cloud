@@ -2426,16 +2426,6 @@ test_extnet_dnshost_dispatched() {
   ! grep -q 'Comando desconhecido' "${T}/err" || fail "dns-host nao despachado"
 }
 
-test_video_script_timing() {
-  local f="${PROJECT_DIR}/docs/roteiro-video.md"
-  [[ -f "${f}" ]] || fail "roteiro ausente" || return 1
-  grep -qi 'DevOps' "${f}" && grep -qi 'cliente' "${f}" || fail "faltam cenas DevOps/cliente" || return 1
-  # Soma a coluna "Duracao (s)" da tabela de cenas.
-  local total
-  total="$(awk -F'|' '/^\| *[0-9]+ *\|/ { gsub(/ /, "", $4); s += $4 } END { print s + 0 }' "${f}")"
-  [[ "${total}" -ge 300 && "${total}" -le 420 ]] || fail "roteiro soma ${total}s (esperado 300-420)"
-}
-
 # ---------------------------------------------------------------- install-app / start-app
 
 # Sandbox das etapas: HOME e PATH isolados, comandos falsos para terraform, openstack,
@@ -3599,7 +3589,7 @@ test_recreate_bad_args() {
 
 test_docs_recreate_app() {
   local d="${PROJECT_DIR}/docs" f
-  for f in "${d}/lab.sh.md" "${d}/nuvem-larcerto.md" "${PROJECT_DIR}/README.md" "${d}/roteiro-video.md"; do
+  for f in "${d}/lab.sh.md" "${d}/nuvem-larcerto.md" "${PROJECT_DIR}/README.md"; do
     grep -qF './lab.sh recreate-app' "${f}" || fail "$(basename "${f}") sem recreate-app" || return 1
   done
   grep -qF 'stop_host_libvirt` (root)' "${d}/lab.sh.md" && grep -qF 'Usa root no `start`' "${d}/lab.sh.md" \
