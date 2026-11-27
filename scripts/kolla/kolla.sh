@@ -215,12 +215,33 @@ kolla_run() {
   done
 }
 
+# O Kolla (precheck do rabbitmq) exige que o hostname resolva so para o IP do network_interface.
+# No Ubuntu, o /etc/hosts vem com "127.0.1.1 <hostname>": quem troca isso e o bootstrap
+# (role etc_hosts do Kolla). So leitura: para antes do Ansible, com o comando que resolve.
+kolla_check_hostname() {
+  local ifc ip host got
+  ifc="$(network_iface)"
+  ip="$(ip -4 -o addr show "${ifc}" 2>/dev/null | awk '{ split($4, a, "/"); print a[1]; exit }')"
+  # sem IP na interface: o proprio Kolla reclama dela com mensagem melhor
+  [[ -n "${ip}" ]] || return 0
+  host="$(hostname)"
+  host="${host%%.*}"
+  got="$({ getent ahostsv4 "${host}" || true; } | awk '{ print $1 }' | sort -u | paste -sd ' ' -)"
+  [[ "${got}" == "${ip}" ]] && return 0
+  echo "Erro: o hostname '${host}' resolve para '${got:-nada}', mas o Kolla exige so o IP da ${ifc} (${ip})." >&2
+  echo "Rode ./larcerto.sh bootstrap: ele grava ${ip} no /etc/hosts e tira a linha 127.0.1.1 do hostname." >&2
+  return 1
+}
+
 cmd_kolla() {
   local action="$1"
   # network_interface dummy* (modo isolado): o bootstrap grava o IP dela no /etc/hosts e o
   # prechecks/deploy poem o VIP nela, entao ela precisa existir antes (maquina nova sem prep).
   case "${action}" in
     bootstrap|prechecks|deploy) host_net_up ;;
+  esac
+  case "${action}" in
+    prechecks|deploy) kolla_check_hostname || exit 1 ;;
   esac
   # Com set -e, uma falha em kolla_run encerra o larcerto.sh com o mesmo codigo do kolla-ansible.
   kolla_run "${action}"

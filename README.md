@@ -334,6 +334,7 @@ sudo ufw enable                               # se você usava o firewall do Ubu
 | `openvswitch_db` / `pidfile check failed` | `./larcerto.sh fix-ovs` → `./larcerto.sh deploy` |
 | Confirmar OVS sem redeploy longo | `./larcerto.sh test-ovs` |
 | Cabo sem IP / “getting IP configuration” | Só acontece com `network_interface` numa placa física (fora do padrão); já corre no fim de `deploy`/`all`/`post-deploy`; se voltar: `./larcerto.sh fix-wired` |
+| `Erro: o hostname ... resolve para '127.0.1.1'` (ou o precheck do rabbitmq `Hostname has to resolve uniquely to the IP address of api_interface`) | O `bootstrap` ainda não rodou nesta máquina: `./larcerto.sh bootstrap` (troca a linha `127.0.1.1` do hostname pelo IP da `dummy1` no `/etc/hosts`) → `./larcerto.sh all --from prechecks` |
 | VMs sem internet depois de trocar de rede (cabo ↔ Wi-Fi) | `./larcerto.sh ext-net` (o NAT segue a nova rota padrão) |
 | Deploy falha em horizon `409 Conflict` (nome já em uso) | `./larcerto.sh fix-horizon` → `./larcerto.sh deploy` |
 | Horizon já abre no browser | Ignora o 409; usa o login |

@@ -105,6 +105,13 @@ if [[ "$1" == "is-active" ]]; then
   echo inactive; exit 3
 fi
 exit 0'
+  # hostname/getent: por padrao o hostname ja resolve para o IP que o fake ip da a placa
+  fake hostname 'echo "${FAKE_HOSTNAME:-lab-host}"'
+  fake getent '
+[[ "$1" == ahostsv4 ]] || exec /usr/bin/getent "$@"
+ip_="${FAKE_HOSTS_IP-192.168.1.10}"
+[[ -n "${ip_}" ]] || exit 2
+for a in ${ip_}; do printf "%-15s STREAM %s\n%-15s DGRAM\n%-15s RAW\n" "$a" "$2" "$a" "$a"; done'
   # br-ex: existe salvo FAKE_NO_BREX=1; o IP fica em $T/brex_addr.
   fake ip '
 echo "ip $*" >>"$FAKE_LOG"
@@ -672,6 +679,8 @@ test_extnet_down_after_iface_change() {
 isolado_globals() {
   write_globals 'network_interface: "dummy1"' 'neutron_external_interface: "dummy0"' \
     'kolla_internal_vip_address: "10.99.0.250"'
+  # bootstrap ja feito: o hostname resolve para o IP do host na dummy1
+  export FAKE_HOSTS_IP=10.99.0.1
 }
 
 test_isolado_host_net_created() {
@@ -732,6 +741,47 @@ test_isolado_bootstrap_creates_host_net() {
     n_kolla="$(grep -n '^kolla ' "${T}/log" | head -1 | cut -d: -f1)"
     [[ -n "${n_kolla}" && "${n_dummy}" -lt "${n_kolla}" ]] || fail "${a}: dummy1 depois do kolla-ansible" || return 1
   done
+}
+
+# /etc/hosts do Ubuntu sem o bootstrap: hostname em 127.0.1.1 (precheck do rabbitmq falharia)
+test_hostname_unresolved_stops() {
+  isolado_globals
+  export FAKE_HOSTS_IP=127.0.1.1 FAKE_HOSTNAME=ks-aspire
+  local a
+  for a in prechecks deploy; do
+    : >"${T}/log"
+    run_lab "${a}"
+    expect_rc 1 || { fail "${a}"; return 1; }
+    grep -qF "Erro: o hostname 'ks-aspire' resolve para '127.0.1.1', mas o Kolla exige so o IP da dummy1 (10.99.0.1)." "${T}/err" || fail "${a}: sem a mensagem do hostname" || return 1
+    grep -q 'Rode ./larcerto.sh bootstrap' "${T}/err" || fail "${a}: sem a dica do bootstrap" || return 1
+    if grep -q '^kolla ' "${T}/log"; then fail "${a}: chamou o kolla-ansible"; return 1; fi
+  done
+}
+
+# hostname que resolve para dois IPs (o certo e outro) tambem para; sem resolver, idem
+test_hostname_ambiguous_stops() {
+  isolado_globals
+  export FAKE_HOSTS_IP="10.99.0.1 127.0.1.1"
+  run_lab prechecks
+  expect_rc 1 || return 1
+  grep -qF "resolve para '10.99.0.1 127.0.1.1'" "${T}/err" || fail "sem os dois IPs" || return 1
+  export FAKE_HOSTS_IP=""
+  run_lab prechecks
+  expect_rc 1 || return 1
+  grep -qF "resolve para 'nada'" "${T}/err" || fail "sem 'nada'" || return 1
+}
+
+# bootstrap nao checa (e ele que conserta o /etc/hosts); FQDN usa so o nome curto
+test_hostname_bootstrap_not_checked() {
+  isolado_globals
+  export FAKE_HOSTS_IP=127.0.1.1
+  run_lab bootstrap
+  expect_rc 0 || return 1
+  grep -q '^kolla bootstrap-servers' "${T}/log" || fail "bootstrap nao rodou" || return 1
+  export FAKE_HOSTS_IP=10.99.0.1 FAKE_HOSTNAME=lab-host.local
+  : >"${T}/log"
+  run_lab prechecks
+  expect_rc 0 || return 1
 }
 
 test_isolado_fix_wired_missing_dummy() {
