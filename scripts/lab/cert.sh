@@ -1,10 +1,10 @@
 # cert: ver (status), renovar (renew, com --new-ca para trocar a CA) e confiar no navegador (trust)
 # do certificado wildcard da LarCerto, e emitir e entregar ao HAProxy do Kolla o do Horizon (cloud).
 # A CA e os certificados saem da VM ca (papel ca, easy-rsa) e ficam em ansible/files/pki/ (fora do git).
-# Carregado pelo lab.sh (SCRIPT_DIR = raiz do repo); so define funcoes e variaveis. Funcoes sem o prefixo cmd_, que fica para os comandos do ciclo do lab.
+# Carregado pelo larcerto.sh (SCRIPT_DIR = raiz do repo); so define funcoes e variaveis. Funcoes sem o prefixo cmd_, que fica para os comandos do ciclo do lab.
 # shellcheck shell=bash
 
-# Mesmos valores do install.sh, para o modulo funcionar sem depender da ordem dos source no lab.sh.
+# Mesmos valores do install.sh, para o modulo funcionar sem depender da ordem dos source no larcerto.sh.
 HOSTS_INI="${HOSTS_INI:-${SCRIPT_DIR}/ansible/inventory/hosts.ini}"
 ANSIBLE_PLAYBOOK_BIN="${ANSIBLE_PLAYBOOK_BIN:-${VENV_PATH:-$HOME/venvs/kolla}/bin/ansible-playbook}"
 CERT_PKI_DIR="${SCRIPT_DIR}/ansible/files/pki"
@@ -22,7 +22,7 @@ KOLLA_NODE_CONFIG="${KOLLA_NODE_CONFIG:-/etc/kolla}"
 
 
 cert_uso() {
-  echo "Uso: ./lab.sh cert [status|renew [--new-ca [--yes]]|trust|cloud]" >&2
+  echo "Uso: ./larcerto.sh cert [status|renew [--new-ca [--yes]]|trust|cloud]" >&2
 }
 
 
@@ -98,7 +98,7 @@ cert_status() {
   local agora rc=0 faltam=0 f saida ip fp_local fp_servido
   for f in "${CERT_CA}" "${CERT_LEAF}"; do
     if [[ ! -f "${f}" ]]; then
-      echo "Falta: ${f} -> ./lab.sh install-app --from nuvem" >&2
+      echo "Falta: ${f} -> ./larcerto.sh install-app --from nuvem" >&2
       faltam=1
     fi
   done
@@ -124,7 +124,7 @@ cert_status() {
     echo "AVISO: certificado expirado" >&2
     rc=2
   elif [[ "${dias_leaf}" -lt "${CERT_WARN_DAYS}" || "${dias_ca}" -lt "${CERT_WARN_DAYS}" ]]; then
-    echo "AVISO: faltam menos de ${CERT_WARN_DAYS} dias: ./lab.sh cert renew" >&2
+    echo "AVISO: faltam menos de ${CERT_WARN_DAYS} dias: ./larcerto.sh cert renew" >&2
   fi
 
   ip="$(cert_web_ip)"
@@ -149,7 +149,7 @@ cert_status() {
 cert_status_cloud() {
   local agora="$1" saida fp_servido ruim=0
   if [[ ! -f "${CERT_CLOUD}" ]]; then
-    echo "Horizon (cloud): nao emitido (./lab.sh cert cloud)"
+    echo "Horizon (cloud): nao emitido (./larcerto.sh cert cloud)"
     return 0
   fi
   cert_mostra "Horizon (cloud)" "${CERT_CLOUD}" "${agora}"
@@ -196,7 +196,7 @@ cert_ansible_em() {
 
 cert_exige_hosts() {
   if [[ ! -f "${HOSTS_INI}" ]]; then
-    echo "Falta: ${HOSTS_INI} -> ./lab.sh install-app (o inventario sai do Terraform)" >&2
+    echo "Falta: ${HOSTS_INI} -> ./larcerto.sh install-app (o inventario sai do Terraform)" >&2
     return 1
   fi
 }
@@ -204,7 +204,7 @@ cert_exige_hosts() {
 # Renovar sem a CA guardada faria a VM criar outra CA sem aviso: so o --new-ca pode fazer isso.
 cert_exige_ca() {
   if [[ ! -f "${CERT_PKI_DIR}/ca.key" ]]; then
-    echo "Falta: ${CERT_PKI_DIR}/ca.key -> ./lab.sh install-app --from nuvem" >&2
+    echo "Falta: ${CERT_PKI_DIR}/ca.key -> ./larcerto.sh install-app --from nuvem" >&2
     echo "Sem a CA guardada, a VM ca criaria outra CA sem aviso. Para trocar a CA de propósito: cert renew --new-ca" >&2
     return 1
   fi
@@ -241,8 +241,8 @@ cert_troca_ca() {
     return "${rc}"
   fi
   cert_status || rc=$?
-  echo "Reimporte a CA: ./lab.sh cert trust"
-  echo "Reemita o do Horizon: ./lab.sh cert cloud"
+  echo "Reimporte a CA: ./larcerto.sh cert trust"
+  echo "Reemita o do Horizon: ./larcerto.sh cert cloud"
   return "${rc}"
 }
 
@@ -334,7 +334,7 @@ cert_trust() {
     return 1
   fi
   if [[ ! -f "${CERT_CA}" ]]; then
-    echo "Falta: ${CERT_CA} -> ./lab.sh install-app --from nuvem" >&2
+    echo "Falta: ${CERT_CA} -> ./larcerto.sh install-app --from nuvem" >&2
     return 1
   fi
 
@@ -396,7 +396,7 @@ cert_cloud_instala() {
   echo "Certificado do Horizon: ${destino} (root, 600)"
 
   if ! run_as_root grep -q horizon_https_front "${frontend}" 2>/dev/null; then
-    echo "Falta o frontend 443 do Horizon: rode ./lab.sh deploy uma vez"
+    echo "Falta o frontend 443 do Horizon: rode ./larcerto.sh deploy uma vez"
     return 0
   fi
   docker_cmd restart haproxy >/dev/null || rc=$?
@@ -434,7 +434,7 @@ cert_cloud() {
 }
 
 
-# Ponto de entrada de ./lab.sh cert [subcomando]
+# Ponto de entrada de ./larcerto.sh cert [subcomando]
 cert_main() {
   local sub="${1:-status}"
   if [[ $# -gt 0 ]]; then

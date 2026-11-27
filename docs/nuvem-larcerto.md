@@ -26,7 +26,7 @@ Cada VM tem um floating IP da `public` (pool `.100–.199`). O `db` só aceita a
 | Aula | Aqui | Por quê |
 |------|------|---------|
 | DevStack em Multipass (M06) | Kolla AIO no host | lab do repo |
-| br-ex com IP e NAT refeitos à mão após reboot (M06/M07) | `./lab.sh ext-net` (chamado pelo `start`) | mesma ideia, automatizada e reversível (`--down`) |
+| br-ex com IP e NAT refeitos à mão após reboot (M06/M07) | `./larcerto.sh ext-net` (chamado pelo `start`) | mesma ideia, automatizada e reversível (`--down`) |
 | boot de volume (M07/M08) | boot da imagem, disco de 10 GB do flavor | Kolla deployado sem Cinder |
 | DNS e CA em VMs Multipass (M05) | VMs `dns` e `ca` dentro do OpenStack | topologia "completa", sem mexer mais no host |
 | senha no `providers.tf` (M09) | `clouds.yaml` do `devops1` fora do git | segredos fora do repo |
@@ -45,31 +45,31 @@ Cada VM tem um floating IP da `public` (pool `.100–.199`). O `db` só aceita a
 ## Subir tudo
 
 ```bash
-./lab.sh install-app           # confere os pré-requisitos e roda as etapas abaixo; para na que falhar
+./larcerto.sh install-app           # confere os pré-requisitos e roda as etapas abaixo; para na que falhar
 ```
 
-Se a instalação já existe (depois de um reboot ou de `lab.sh stop`), `./lab.sh start-app`
+Se a instalação já existe (depois de um reboot ou de `larcerto.sh stop`), `./larcerto.sh start-app`
 religa as VMs e a app sem recriar nada.
 
 Passos manuais (o que o `install-app` roda, na mesma ordem):
 
 ```bash
-./lab.sh start                 # Kolla + ext-net (br-ex 172.24.4.1 + NAT) + fix-wired
+./larcerto.sh start                 # Kolla + ext-net (br-ex 172.24.4.1 + NAT) + fix-wired
 ./cloud/bootstrap.sh           # admin: public, ds1G, ubuntu-22.04, projeto larcerto, devops1
 export OS_CLIENT_CONFIG_FILE=$PWD/cloud/secrets/clouds.yaml OS_CLOUD=larcerto-devops1
 cd terraform && terraform init && terraform apply     # 4 VMs + inventory/hosts.ini
 cd ../ansible && ~/venvs/kolla/bin/ansible-playbook site.yml  # dns, ca, db, web
-cd .. && ./lab.sh dns-host  # host resolve *.larcerto.com.br pela VM dns
+cd .. && ./larcerto.sh dns-host  # host resolve *.larcerto.com.br pela VM dns
 ```
 
 ### Confiar na CA no navegador (sem abrir as configurações)
 
 Enquanto a CA LarCerto não estiver no navegador, `https://larcerto.com.br` abre com "Not Secure",
-mesmo com o certificado certo no `web` (`./lab.sh cert` mostra `servido: igual`).
+mesmo com o certificado certo no `web` (`./larcerto.sh cert` mostra `servido: igual`).
 
 ```bash
 sudo apt install libnss3-tools   # uma vez: traz o certutil (pacote do sistema, pede senha)
-./lab.sh cert trust      # importa ca.crt em cada banco NSS do usuário, sem sudo
+./larcerto.sh cert trust      # importa ca.crt em cada banco NSS do usuário, sem sudo
 ```
 
 O `cert trust` imprime uma linha por banco (`importado`, `ja estava`, `substituido` ou `falhou`) e
@@ -88,10 +88,10 @@ uma vez por CA: de novo só quando o projeto sobe do zero (`clear-all` + `all`),
 Manual, se preferir: Configurações → Certificados → Autoridades → Importar
 `ansible/files/pki/ca.crt` → "confiar para identificar sites".
 
-Ver a validade e se o `web` serve o mesmo certificado: `./lab.sh cert` (exit 2 se expirou,
+Ver a validade e se o `web` serve o mesmo certificado: `./larcerto.sh cert` (exit 2 se expirou,
 se a cadeia não confere ou se o `web` serve outro). Emitir de novo com a mesma CA:
-`./lab.sh cert renew`. Trocar a CA (quebra a confiança no navegador até reimportar):
-`./lab.sh cert renew --new-ca`, que copia `files/pki/` antes e pede a palavra `nova-ca`.
+`./larcerto.sh cert renew`. Trocar a CA (quebra a confiança no navegador até reimportar):
+`./larcerto.sh cert renew --new-ca`, que copia `files/pki/` antes e pede a palavra `nova-ca`.
 
 ### HTTPS do Horizon (`https://cloud.larcerto.com.br`)
 
@@ -102,9 +102,9 @@ um VIP único, então um frontend extra do HAProxy do Kolla
 serve o Horizon em `192.168.1.250:443`. As APIs, os openrc e o Terraform continuam em HTTP.
 
 ```bash
-./lab.sh cert cloud   # emite na VM ca e grava /etc/kolla/haproxy/haproxy.pem (root)
-./lab.sh deploy       # uma vez: cria o frontend 443 e o ajuste do Horizon; o Kolla reinicia o haproxy
-./lab.sh cert         # bloco "Horizon (cloud)": validade e servido: igual
+./larcerto.sh cert cloud   # emite na VM ca e grava /etc/kolla/haproxy/haproxy.pem (root)
+./larcerto.sh deploy       # uma vez: cria o frontend 443 e o ajuste do Horizon; o Kolla reinicia o haproxy
+./larcerto.sh cert         # bloco "Horizon (cloud)": validade e servido: igual
 bash tests/cloud-checks.sh https_cloud
 ```
 
@@ -118,7 +118,7 @@ Desfazer (o template fica no repo; sem o `.pem` ele sai vazio):
 ```bash
 sudo rm /etc/kolla/haproxy/haproxy.pem /etc/kolla/haproxy/services.d/horizon-https.cfg
 docker exec haproxy rm -f /etc/haproxy/certificates/haproxy.pem   # cópia no volume letsencrypt_certificates
-./lab.sh deploy
+./larcerto.sh deploy
 ```
 
 Não apague só o template do repo: o Kolla não remove o `.cfg` já gerado em `/etc/kolla`, e a cópia do
@@ -127,7 +127,7 @@ Não apague só o template do repo: o Kolla não remove o `.cfg` já gerado em `
 ### Ver as VMs
 
 ```bash
-./lab.sh vms
+./larcerto.sh vms
 ```
 
 Mostra as VMs do projeto `larcerto` como o `devops1` (nome, status, IP privado e floating IP) e a
@@ -168,17 +168,17 @@ resolvectl query horizon.larcerto.com.br    # cloud.larcerto.com.br -> 192.168.1
 ## Recriar (demonstração / REQ25)
 
 ```bash
-./lab.sh recreate-app          # pede para digitar larcerto; --yes pula a pergunta
+./larcerto.sh recreate-app          # pede para digitar larcerto; --yes pula a pergunta
 ```
 
 Apaga as VMs, a rede, o roteador e os floating IPs (`terraform destroy`), recria tudo
 (`terraform apply` + `ansible-playbook site.yml`), aponta o DNS do host para a VM `dns` nova e roda o
 `cloud-checks.sh`. No fim mostra `Recriado em <M>min<S>s`. O projeto `larcerto`, o `devops1` e a CA
 ficam; anúncios e fotos criados na nuvem se perdem (a semente volta). Pede root (senha do `sudo`, se
-não houver NOPASSWD nem grupo `docker`) no `start` e no `dns-host`; ver `docs/lab.sh.md`.
+não houver NOPASSWD nem grupo `docker`) no `start` e no `dns-host`; ver `docs/larcerto.sh.md`.
 
 Depois de um reboot, as VMs só nascem `ACTIVE` com o libvirt do host parado: a etapa `start` (2/8) faz
-isso. Se o `terraform` falhar com VM em `ERROR`, `./lab.sh vms` mostra o status.
+isso. Se o `terraform` falhar com VM em `ERROR`, `./larcerto.sh vms` mostra o status.
 
 Passos manuais equivalentes:
 
@@ -192,8 +192,8 @@ cd ../ansible && ~/venvs/kolla/bin/ansible-playbook site.yml
 ## Desfazer no host
 
 ```bash
-./lab.sh dns-host --down       # resolvedor do host volta ao normal
-./lab.sh ext-net --down        # tira o IP da br-ex e as regras de NAT/FORWARD
+./larcerto.sh dns-host --down       # resolvedor do host volta ao normal
+./larcerto.sh ext-net --down        # tira o IP da br-ex e as regras de NAT/FORWARD
 ```
 
 ## Comandos úteis
@@ -229,9 +229,9 @@ openstack floating ip list
 ### Estado do lab
 
 ```bash
-./lab.sh status                # Kolla, br-ex, Horizon no VIP
-./lab.sh vms                   # VMs: status, IP privado, floating IP e a linha de ssh
-./lab.sh cert                  # CA, certificados, validade e se o servido confere
+./larcerto.sh status                # Kolla, br-ex, Horizon no VIP
+./larcerto.sh vms                   # VMs: status, IP privado, floating IP e a linha de ssh
+./larcerto.sh cert                  # CA, certificados, validade e se o servido confere
 bash tests/cloud-checks.sh     # DNS, HTTP -> HTTPS, HTTPS, PHP e banco (PASS/FAIL por item)
 docker ps --format '{{.Names}}\t{{.Status}}' | sort   # containers do Kolla
 ```
@@ -239,7 +239,7 @@ docker ps --format '{{.Names}}\t{{.Status}}' | sort   # containers do Kolla
 ### Dentro das VMs
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@<floating-ip>       # a linha pronta sai no ./lab.sh vms
+ssh -i ~/.ssh/id_ed25519 ubuntu@<floating-ip>       # a linha pronta sai no ./larcerto.sh vms
 sudo /var/www/larcerto/run.sh ps                    # na VM web: estado da app
 sudo /var/www/larcerto/run.sh logs                  # na VM web: logs do Apache
 sudo /var/www/larcerto/run.sh db:console            # na VM web: cliente mariadb na VM db
@@ -249,19 +249,19 @@ sudo /var/www/larcerto/run.sh db:console            # na VM web: cliente mariadb
 
 ```bash
 resolvectl query larcerto.com.br        # o host resolve pela VM dns? (floating IP da web)
-./lab.sh dns-host                       # se não resolver: aponta o host para a VM dns de novo
-./lab.sh cert trust                     # navegador sem a CA: importa e depois reinicie o navegador
+./larcerto.sh dns-host                       # se não resolver: aponta o host para a VM dns de novo
+./larcerto.sh cert trust                     # navegador sem a CA: importa e depois reinicie o navegador
 ```
 
 ### Ciclo de vida
 
 | Situação | Comando |
 |----------|---------|
-| Subir o projeto inteiro (do zero ou continuar) | `./lab.sh all` (ou `--from <etapa>`) |
-| Depois de um reboot ou de `stop` | `./lab.sh start-app` |
-| Parar tudo (não volta no boot) | `./lab.sh stop` |
-| Recriar as VMs da app (demonstração do REQ25) | `./lab.sh recreate-app` |
-| Apagar tudo, sem subir de volta | `./lab.sh clear-all` |
+| Subir o projeto inteiro (do zero ou continuar) | `./larcerto.sh all` (ou `--from <etapa>`) |
+| Depois de um reboot ou de `stop` | `./larcerto.sh start-app` |
+| Parar tudo (não volta no boot) | `./larcerto.sh stop` |
+| Recriar as VMs da app (demonstração do REQ25) | `./larcerto.sh recreate-app` |
+| Apagar tudo, sem subir de volta | `./larcerto.sh clear-all` |
 
 ## App
 

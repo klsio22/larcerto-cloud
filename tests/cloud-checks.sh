@@ -50,7 +50,7 @@ check_https_ok() {
 }
 
 # Horizon por HTTPS no VIP com a CA LarCerto. Fora do ALL: o certificado do
-# Horizon e opcional (REQ12) e so existe depois do ./lab.sh cert cloud + deploy.
+# Horizon e opcional (REQ12) e so existe depois do ./larcerto.sh cert cloud + deploy.
 check_https_cloud() {
   [[ "$(curl -sS -o /dev/null -w '%{http_code}' --cacert "${PKI}/ca.crt" \
     --resolve "cloud.${DOMAIN}:443:192.168.1.250" "https://cloud.${DOMAIN}/auth/login/")" == 200 ]]

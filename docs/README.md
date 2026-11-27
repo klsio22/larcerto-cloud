@@ -6,8 +6,8 @@ Referência dos scripts shell do lab OpenStack AIO. O guia operacional (como sub
 
 | Script / ficheiro | Papel | Doc |
 |-------------------|-------|-----|
-| [`../lab.sh`](../lab.sh) | Entrypoint único: sobe tudo (`all`), Kolla, app na nuvem, certificados, VMs, fixes, `clear-all` (`./lab.sh help`) | [`lab.sh.md`](lab.sh.md) |
-| [`../scripts/`](../scripts/) | Módulos carregados pelo `lab.sh` (`common.sh`, `lab/`, `kolla/`) | [`lab.sh.md`](lab.sh.md) |
+| [`../larcerto.sh`](../larcerto.sh) | Entrypoint único: sobe tudo (`all`), Kolla, app na nuvem, certificados, VMs, fixes, `clear-all` (`./larcerto.sh help`) | [`larcerto.sh.md`](larcerto.sh.md) |
+| [`../scripts/`](../scripts/) | Módulos carregados pelo `larcerto.sh` (`common.sh`, `lab/`, `kolla/`) | [`larcerto.sh.md`](larcerto.sh.md) |
 | Passo a passo do Trabalho 1 | Do lab ligado até `https://larcerto.com.br` | [`nuvem-larcerto.md`](nuvem-larcerto.md) |
 | Topologia (REQ09) | Host, Kolla, projeto `larcerto`, 4 VMs; mapa aula → passo | [`topologia-aio.md`](topologia-aio.md) |
 | [`../kolla-config/*-openrc*.sh`](../kolla-config/) | Credenciais CLI OpenStack (`source`) | [`kolla-config-scripts.md`](kolla-config-scripts.md) |
@@ -21,15 +21,15 @@ Referência dos scripts shell do lab OpenStack AIO. O guia operacional (como sub
 
 ```mermaid
 flowchart LR
-  labSh["lab.sh"] --> common["scripts/common.sh"]
+  labSh["larcerto.sh"] --> common["scripts/common.sh"]
   labSh --> lab["scripts/lab/ (rede, ovs, ciclo, install, cert, vms)"]
   labSh --> kolla["scripts/kolla/kolla.sh"]
   kolla --> kollaCfg["kolla-config/"]
   kolla --> openrc["*-openrc.sh / clouds.yaml"]
 ```
 
-1. O aluno usa **`lab.sh`** (`all` sobe tudo; `status`, `vms`, `cert`, fixes).
-2. Comandos Kolla (`bootstrap`, `prechecks`, `deploy`, `post-deploy`, `stop-kolla`) são executados por **`scripts/kolla/kolla.sh`**, sempre pelo `lab.sh`.
+1. O aluno usa **`larcerto.sh`** (`all` sobe tudo; `status`, `vms`, `cert`, fixes).
+2. Comandos Kolla (`bootstrap`, `prechecks`, `deploy`, `post-deploy`, `stop-kolla`) são executados por **`scripts/kolla/kolla.sh`**, sempre pelo `larcerto.sh`.
 3. O Kolla lê **`kolla-config/`** (`globals.yml`, `passwords.yml`).
 4. Após **`post-deploy`**, o Ansible gera `*-openrc.sh` e `clouds.yaml` para a CLI OpenStack.
 

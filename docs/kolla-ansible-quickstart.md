@@ -101,17 +101,17 @@ Este projeto ja inclui inventario (`all-in-one`) e config (`kolla-config/`).
 Para usar exatamente essa estrutura:
 
 ```bash
-./lab.sh all
+./larcerto.sh all
 ```
 
-Esse comando sobe o projeto inteiro (OpenStack, nuvem, app e HTTPS do Horizon) e continua de uma etapa com `./lab.sh all --from <etapa>`. Numa máquina nova, rode antes `./lab.sh bootstrap`.
+Esse comando sobe o projeto inteiro (OpenStack, nuvem, app e HTTPS do Horizon) e continua de uma etapa com `./larcerto.sh all --from <etapa>`. Numa máquina nova, rode antes `./larcerto.sh bootstrap`.
 
 Só o OpenStack, em etapas:
 
 ```bash
-./lab.sh bootstrap
-./lab.sh prechecks
-./lab.sh deploy
+./larcerto.sh bootstrap
+./larcerto.sh prechecks
+./larcerto.sh deploy
 ```
 
 ## 8) Pos-deploy e uso inicial
@@ -125,7 +125,7 @@ kolla-ansible post-deploy
 No repositorio:
 
 ```bash
-./lab.sh post-deploy
+./larcerto.sh post-deploy
 ```
 
 Instalar cliente OpenStack:

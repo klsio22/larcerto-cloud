@@ -1,5 +1,5 @@
 # vms: lista as VMs do projeto larcerto (status, IP privado, floating IP e a linha de ssh), so leitura.
-# Carregado pelo lab.sh (SCRIPT_DIR = raiz do repo), depois do install.sh: usa os_cli, CLOUDS_YAML,
+# Carregado pelo larcerto.sh (SCRIPT_DIR = raiz do repo), depois do install.sh: usa os_cli, CLOUDS_YAML,
 # OPENSTACK_BIN e VENV_DIR de la. Le da API (nao do inventario) porque o floating IP muda num novo apply.
 # shellcheck shell=bash
 
@@ -8,7 +8,7 @@ VMS_PUBLIC_CIDR="${EXT_NET_CIDR:-172.24.4.0/24}"
 
 cmd_vms() {
   if [[ $# -gt 0 ]]; then
-    echo "Uso: ./lab.sh vms" >&2
+    echo "Uso: ./larcerto.sh vms" >&2
     return 1
   fi
   if [[ ! -f "${CLOUDS_YAML}" ]]; then
@@ -21,7 +21,7 @@ cmd_vms() {
   fi
   local json
   if ! json="$(os_cli server list -f json -c Name -c Status -c Networks 2>/dev/null)"; then
-    echo "A API do OpenStack nao respondeu (lab desligado?) -> ./lab.sh start" >&2
+    echo "A API do OpenStack nao respondeu (lab desligado?) -> ./larcerto.sh start" >&2
     return 1
   fi
   python3 -I -c '

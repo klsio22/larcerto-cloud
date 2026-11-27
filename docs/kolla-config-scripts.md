@@ -5,7 +5,7 @@ Pasta: [`../kolla-config/`](../kolla-config/).
 Os ficheiros `*-openrc.sh` e `clouds.yaml` são **gerados pelo Kolla** no `post-deploy` (marcados `# Ansible managed`). Não editar à mão — regenerar com:
 
 ```bash
-./lab.sh post-deploy
+./larcerto.sh post-deploy
 ```
 
 **Contêm senhas.** Não partilhar; preferir não commitar em repositórios públicos.

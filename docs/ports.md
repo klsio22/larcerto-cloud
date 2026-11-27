@@ -3,7 +3,7 @@
 Mapa das portas esperadas neste lab. Fonte: defaults do Kolla-Ansible
 (`group_vars/all` no venv) alinhados a [`kolla-config/globals.yml`](../kolla-config/globals.yml).
 
-- VIP / Horizon: `http://192.168.1.250` (porta 80 via HAProxy) e `https://cloud.larcerto.com.br` (443, `./lab.sh cert cloud`)
+- VIP / Horizon: `http://192.168.1.250` (porta 80 via HAProxy) e `https://cloud.larcerto.com.br` (443, `./larcerto.sh cert cloud`)
 - `network_interface`: `enp9s0` (cabo — gerenciamento; internet do host permanece)
 - `neutron_external_interface`: `dummy0` (não usa o cabo)
 

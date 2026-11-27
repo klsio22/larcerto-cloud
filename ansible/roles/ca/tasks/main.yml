@@ -17,9 +17,9 @@
   args:
     creates: "{{ easyrsa_dir }}/easyrsa"
 
-# ca_new (lab.sh cert renew --new-ca): a copia de seguranca ja foi feita pelo lab.sh, entao aqui
+# ca_new (larcerto.sh cert renew --new-ca): a copia de seguranca ja foi feita pelo larcerto.sh, entao aqui
 # so se apaga a PKI da VM e a copia local, e o ramo "Criar CA nova" abaixo faz o resto.
-- name: Trocar a CA (ca_new=true, so pelo lab.sh cert renew --new-ca)
+- name: Trocar a CA (ca_new=true, so pelo larcerto.sh cert renew --new-ca)
   when: ca_new | default(false) | bool
   block:
     - name: Apagar a PKI da VM
@@ -94,7 +94,7 @@
         chdir: "{{ easyrsa_dir }}"
         creates: "{{ easyrsa_dir }}/pki/ca.crt"
 
-# cert_renew (lab.sh cert renew): tira da VM o certificado, a chave e o pedido atuais e guarda em
+# cert_renew (larcerto.sh cert renew): tira da VM o certificado, a chave e o pedido atuais e guarda em
 # pki/renewed-<data>/, para o build-server-full abaixo emitir de novo. ca.crt e ca.key ficam como estao.
 - name: Renovar o certificado do servidor (cert_renew=true, mesma CA)
   when: cert_renew | default(false) | bool
@@ -130,10 +130,10 @@
     chdir: "{{ easyrsa_dir }}"
   changed_when: false
 
-# cert_cloud (lab.sh cert cloud): certificado do Horizon (cloud e o apelido horizon), assinado pela mesma
-# CA. O lab.sh so chama este ramo quando files/pki/cloud.crt falta ou nao confere com a CA, entao o
+# cert_cloud (larcerto.sh cert cloud): certificado do Horizon (cloud e o apelido horizon), assinado pela mesma
+# CA. O larcerto.sh so chama este ramo quando files/pki/cloud.crt falta ou nao confere com a CA, entao o
 # certificado antigo da VM vai para pki/renewed-cloud-<data>/ e um novo e emitido.
-- name: Certificado do Horizon (cert_cloud=true, so pelo lab.sh cert cloud)
+- name: Certificado do Horizon (cert_cloud=true, so pelo larcerto.sh cert cloud)
   when: cert_cloud | default(false) | bool
   block:
     - name: Carimbo da emissao do cloud

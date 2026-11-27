@@ -9,7 +9,7 @@ completo (router, redes e floating IPs) está em [`../docs/nuvem-larcerto.md`](n
 Host (Zorin) — cliente: Firefox/Brave e terminal (SSH)
 ├─ enp9s0 ………… gerenciamento + internet (IP do host; VIP 192.168.1.250)
 ├─ dummy0 ……… neutron_external_interface (não toca no cabo)
-├─ br-ex ………… 172.24.4.1/24 + NAT (lab.sh ext-net): host alcança os floating IPs
+├─ br-ex ………… 172.24.4.1/24 + NAT (larcerto.sh ext-net): host alcança os floating IPs
 └─ Kolla AIO (containers)
      ├─ Horizon / APIs (HAProxy no VIP; https://cloud.larcerto.com.br) ← REQ12
      └─ Projeto OpenStack larcerto, usuário devops1                  ← REQ13
@@ -34,13 +34,13 @@ Portas: ver [`ports.md`](ports.md).
 | `neutron_external_interface` | `dummy0` | Neutron não assume a NIC física |
 | `kolla_internal_vip_address` | `192.168.1.250` | Endpoint Horizon/APIs (confirmar IP livre na LAN) |
 
-Colocar o cabo em `neutron_external_interface` (ou no `br-ex` do OVS) derruba a rede. Este lab usa só `dummy0` na externa. O fluxo normal (`lab.sh deploy` / `all` / `post-deploy`) corre `fix-wired` no fim; se a cabo ainda ficar sem IPv4, corre `./lab.sh fix-wired` de novo.
+Colocar o cabo em `neutron_external_interface` (ou no `br-ex` do OVS) derruba a rede. Este lab usa só `dummy0` na externa. O fluxo normal (`larcerto.sh deploy` / `all` / `post-deploy`) corre `fix-wired` no fim; se a cabo ainda ficar sem IPv4, corre `./larcerto.sh fix-wired` de novo.
 
 ## Aula → passo
 
 | Módulo | Foco | Passo neste lab |
 |--------|------|-----------------|
-| 06 | Implantar nuvem privada | Preparar host, `dummy0`, `lab.sh` Kolla (bootstrap → deploy) |
+| 06 | Implantar nuvem privada | Preparar host, `dummy0`, `larcerto.sh` Kolla (bootstrap → deploy) |
 | 07 | Projeto e instâncias via Horizon | REQ13–REQ15: projeto `larcerto` (`cloud/bootstrap.sh`) e VMs (Terraform); Horizon para mostrar no vídeo |
 | 08 | CLI OpenStack | Alternativa ao Horizon para imagens/flavors/instâncias |
 | 09–10 | Terraform / Ansible | `terraform/` cria as 4 VMs, `ansible/` configura dns → ca → db → web (REQ25, usado também no Trabalho 1) |
@@ -50,14 +50,14 @@ Colocar o cabo em `neutron_external_interface` (ou no `br-ex` do OVS) derruba a 
 1. Venv Kolla ativo (`~/venvs/kolla`) e `kolla-ansible install-deps` já feito.
 2. Conferir VIP livre: `ping -c1 192.168.1.250` (não deve responder se estiver livre).
 3. Revisar [`../kolla-config/globals.yml`](../kolla-config/globals.yml): `enp9s0`, `dummy0`, VIP.
-4. Máquina nova: `./lab.sh bootstrap` (uma vez).
-5. Subir tudo: `./lab.sh all` (prep → Kolla → projeto → Terraform → Ansible → HTTPS do Horizon;
+4. Máquina nova: `./larcerto.sh bootstrap` (uma vez).
+5. Subir tudo: `./larcerto.sh all` (prep → Kolla → projeto → Terraform → Ansible → HTTPS do Horizon;
    continuar de uma etapa com `--from <etapa>`). O passo `prereqs` avisa se falta o cliente
    `openstack` no venv.
 6. Abrir: `https://larcerto.com.br` (app) e `https://cloud.larcerto.com.br` (Horizon), com a CA
-   importada (`./lab.sh cert trust`).
+   importada (`./larcerto.sh cert trust`).
 
-Estado / parar / subir: `./lab.sh status` · `./lab.sh vms` · `./lab.sh stop` · `./lab.sh start-app`
+Estado / parar / subir: `./larcerto.sh status` · `./larcerto.sh vms` · `./larcerto.sh stop` · `./larcerto.sh start-app`
 
 ## Pós-nuvem
 

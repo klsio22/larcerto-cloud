@@ -1,6 +1,6 @@
 # install-app, start-app e recreate-app: sobem a nuvem e a app numa sequencia de etapas, com retorno em caso de erro.
-# Carregado pelo lab.sh (SCRIPT_DIR = raiz do repo). Cada etapa roda numa subshell, para o
-# exit dela nao derrubar o lab.sh e o codigo volta para quem chamou.
+# Carregado pelo larcerto.sh (SCRIPT_DIR = raiz do repo). Cada etapa roda numa subshell, para o
+# exit dela nao derrubar o larcerto.sh e o codigo volta para quem chamou.
 # shellcheck shell=bash
 
 INSTALL_STEPS=(prereqs start bootstrap terraform nuvem app dns-host checks)
@@ -93,7 +93,7 @@ secrets_from_app_env() {
     echo "DB_PASSWORD de app/.env tem aspas simples, que o role db nao aceita: preencha o secrets.yml a mao" >&2
     return 1
   fi
-  (umask 077 && printf -- "---\n# Gerado pelo lab.sh install-app a partir de app/.env (DB_PASSWORD).\ndb_password: '%s'\n" \
+  (umask 077 && printf -- "---\n# Gerado pelo larcerto.sh install-app a partir de app/.env (DB_PASSWORD).\ndb_password: '%s'\n" \
     "${val}" >"${SECRETS_YML}") || return 1
   chmod 600 "${SECRETS_YML}"
   echo "secrets.yml criado a partir de app/.env (mesma senha do banco da app local)"
@@ -126,15 +126,15 @@ step_prereqs() {
     fi
   fi
   if [[ "${MODE}" == recreate && ! -f "${CLOUDS_YAML}" ]]; then
-    falta "cloud/secrets/clouds.yaml do devops1 (o projeto ainda nao foi criado)" "./lab.sh install-app"
+    falta "cloud/secrets/clouds.yaml do devops1 (o projeto ainda nao foi criado)" "./larcerto.sh install-app"
   fi
   if [[ "${MODE}" == start && ( ! -f "${CLOUDS_YAML}" || ! -f "${HOSTS_INI}" ) ]]; then
     echo "Nao encontrei uma instalacao anterior (falta cloud/secrets/clouds.yaml ou ansible/inventory/hosts.ini)." >&2
-    echo "Rode antes: ./lab.sh install-app" >&2
+    echo "Rode antes: ./larcerto.sh install-app" >&2
     return 1
   fi
   if ! (docker_cmd ps -aq --filter label=kolla_version 2>/dev/null | grep -q .); then
-    falta "containers do Kolla (o deploy ainda nao rodou)" "./lab.sh deploy"
+    falta "containers do Kolla (o deploy ainda nao rodou)" "./larcerto.sh deploy"
   fi
   if [[ "${FALTAM}" -gt 0 ]]; then
     echo "Pre-requisitos faltando: ${FALTAM}. Corrija e rode de novo." >&2
@@ -243,23 +243,23 @@ step_vms() {
 # Dica por etapa, mostrada no bloco de falha.
 step_hint() {
   case "$1" in
-    prep) echo "veja o erro acima; ./lab.sh status mostra a dummy0 e o OVS" ;;
-    prechecks) echo "veja qual checagem do Kolla falhou acima; numa maquina nova, rode antes ./lab.sh bootstrap" ;;
-    deploy) echo "veja a tarefa do Kolla que falhou acima; ./lab.sh status mostra o estado dos containers" ;;
+    prep) echo "veja o erro acima; ./larcerto.sh status mostra a dummy0 e o OVS" ;;
+    prechecks) echo "veja qual checagem do Kolla falhou acima; numa maquina nova, rode antes ./larcerto.sh bootstrap" ;;
+    deploy) echo "veja a tarefa do Kolla que falhou acima; ./larcerto.sh status mostra o estado dos containers" ;;
     post-deploy) echo "veja o erro do kolla-ansible post-deploy acima; ele gera o clouds.yaml do admin" ;;
     prereqs) echo "corrija o que esta nas linhas Falta acima" ;;
-    cert-cloud) echo "veja o erro do cert cloud acima; ./lab.sh cert mostra o estado dos certificados" ;;
-    deploy-https) echo "veja a tarefa do Kolla que falhou acima; ./lab.sh status mostra o estado do haproxy e do Horizon" ;;
-    https-cloud) echo "o Horizon nao respondeu em https://cloud.larcerto.com.br; ./lab.sh cert compara o certificado servido" ;;
-    start) echo "veja a saida do lab.sh start acima (se a API nao respondeu no VIP, espere uns segundos e continue); ./lab.sh status mostra o estado do Kolla" ;;
-    bootstrap) echo "veja o erro do bootstrap acima; ele pula o que ja existe, entao repetir e seguro (./lab.sh status mostra o Kolla)" ;;
+    cert-cloud) echo "veja o erro do cert cloud acima; ./larcerto.sh cert mostra o estado dos certificados" ;;
+    deploy-https) echo "veja a tarefa do Kolla que falhou acima; ./larcerto.sh status mostra o estado do haproxy e do Horizon" ;;
+    https-cloud) echo "o Horizon nao respondeu em https://cloud.larcerto.com.br; ./larcerto.sh cert compara o certificado servido" ;;
+    start) echo "veja a saida do larcerto.sh start acima (se a API nao respondeu no VIP, espere uns segundos e continue); ./larcerto.sh status mostra o estado do Kolla" ;;
+    bootstrap) echo "veja o erro do bootstrap acima; ele pula o que ja existe, entao repetir e seguro (./larcerto.sh status mostra o Kolla)" ;;
     destroy) echo "veja o erro do terraform destroy acima; repetir e seguro: ele so apaga o que ainda existe" ;;
-    terraform) echo "veja o erro do terraform acima; VM em ERROR: ./lab.sh vms mostra o status (depois de um reboot, ./lab.sh start para o libvirt do host, que faz as VMs nascerem em ERROR); repetir o apply e seguro: ele so cria o que falta" ;;
+    terraform) echo "veja o erro do terraform acima; VM em ERROR: ./larcerto.sh vms mostra o status (depois de um reboot, ./larcerto.sh start para o libvirt do host, que faz as VMs nascerem em ERROR); repetir o apply e seguro: ele so cria o que falta" ;;
     nuvem) echo "veja o erro do ansible acima para as VMs dns e ca; o playbook pode ser rodado de novo" ;;
     app) echo "veja o erro do ansible acima para as VMs db e web; o playbook pode ser rodado de novo" ;;
-    dns-host) echo "./lab.sh dns-host precisa do ip da VM dns no inventario (ansible/inventory/hosts.ini)" ;;
+    dns-host) echo "./larcerto.sh dns-host precisa do ip da VM dns no inventario (ansible/inventory/hosts.ini)" ;;
     checks) echo "uma checagem da nuvem falhou (a saida do cloud-checks.sh mostra qual); a nuvem subiu mas nao esta provada" ;;
-    vms) echo "uma VM falta ou nao ligou; ./lab.sh install-app --from terraform cria o que falta (o apply so cria o que nao existe)" ;;
+    vms) echo "uma VM falta ou nao ligou; ./larcerto.sh install-app --from terraform cria o que falta (o apply so cria o que nao existe)" ;;
   esac
 }
 
@@ -294,15 +294,15 @@ run_steps() {
       return 1
     fi
     if [[ "${mode}" == all ]]; then
-      cont="./lab.sh all --from ${step}"
+      cont="./larcerto.sh all --from ${step}"
     elif [[ "${mode}" == clear ]]; then
-      cont="./lab.sh clear-all --yes"
+      cont="./larcerto.sh clear-all --yes"
     elif [[ "${mode}" == recreate && "${step}" == destroy ]]; then
-      cont="./lab.sh recreate-app"
+      cont="./larcerto.sh recreate-app"
     elif [[ "${mode}" == install || "${mode}" == recreate ]]; then
-      cont="./lab.sh install-app --from ${step}"
+      cont="./larcerto.sh install-app --from ${step}"
     else
-      cont="./lab.sh start-app"
+      cont="./larcerto.sh start-app"
     fi
     echo "FALHOU na etapa ${n}/${total} (${step}), codigo ${rc}" >&2
     echo "Dica: $("${hint}" "${step}")" >&2
@@ -315,7 +315,7 @@ run_steps() {
 # Ultima linha de sucesso: a URL e como fazer o navegador confiar na CA.
 resumo_sucesso() {
   echo "Pronto. Abra ${DOMAIN_URL}"
-  echo "Para o navegador confiar no HTTPS: ./lab.sh cert trust (ou importe ${CA_CERT} a mao)."
+  echo "Para o navegador confiar no HTTPS: ./larcerto.sh cert trust (ou importe ${CA_CERT} a mao)."
 }
 
 install_app() {
@@ -327,7 +327,7 @@ install_app() {
       return 1
     fi
   elif [[ -n "${1:-}" ]]; then
-    echo "Uso: ./lab.sh install-app [--from <etapa>]" >&2
+    echo "Uso: ./larcerto.sh install-app [--from <etapa>]" >&2
     return 1
   fi
   MODE=install
@@ -344,7 +344,7 @@ run_all() {
       return 1
     fi
   elif [[ $# -gt 0 ]]; then
-    echo "Uso: ./lab.sh all [--from <etapa>]" >&2
+    echo "Uso: ./larcerto.sh all [--from <etapa>]" >&2
     return 1
   fi
   MODE=install
@@ -355,7 +355,7 @@ run_all() {
 
 start_app() {
   if [[ -n "${1:-}" ]]; then
-    echo "Uso: ./lab.sh start-app" >&2
+    echo "Uso: ./larcerto.sh start-app" >&2
     return 1
   fi
   MODE=start
@@ -369,10 +369,10 @@ recreate_app() {
   case "${1:-}" in
     "") ;;
     --yes) yes=1 ;;
-    *) echo "Uso: ./lab.sh recreate-app [--yes]" >&2; return 1 ;;
+    *) echo "Uso: ./larcerto.sh recreate-app [--yes]" >&2; return 1 ;;
   esac
   if [[ -n "${2:-}" ]]; then
-    echo "Uso: ./lab.sh recreate-app [--yes]" >&2
+    echo "Uso: ./larcerto.sh recreate-app [--yes]" >&2
     return 1
   fi
   if [[ "${yes}" -eq 0 ]]; then
@@ -494,11 +494,11 @@ clear_cabo() {
 
 clear_hint() {
   case "$1" in
-    start) echo "a API da nuvem nao respondeu, e o destroy-app precisa dela; ./lab.sh status mostra o Kolla" ;;
+    start) echo "a API da nuvem nao respondeu, e o destroy-app precisa dela; ./larcerto.sh status mostra o Kolla" ;;
     destroy-app) echo "veja o erro do terraform destroy acima; repetir e seguro: ele so apaga o que ainda existe" ;;
-    ext-net) echo "veja o erro do iptables acima; ./lab.sh ext-net --down pode ser repetido" ;;
+    ext-net) echo "veja o erro do iptables acima; ./larcerto.sh ext-net --down pode ser repetido" ;;
     kolla) echo "veja o erro do kolla-ansible destroy acima; se ele reclamou de processos qemu, sobrou VM fora do Terraform: openstack server list --all-projects (com o kolla-config/clouds.yaml do admin) e apague-as" ;;
-    cabo) echo "o cabo ficou sem IPv4: confira o cabo e o DHCP e rode ./lab.sh fix-wired" ;;
+    cabo) echo "o cabo ficou sem IPv4: confira o cabo e o DHCP e rode ./larcerto.sh fix-wired" ;;
     *) echo "veja o erro acima; repetir o clear-all e seguro" ;;
   esac
 }
@@ -508,10 +508,10 @@ clear_all() {
   case "${1:-}" in
     "") ;;
     --yes) yes=1 ;;
-    *) echo "Uso: ./lab.sh clear-all [--yes]" >&2; return 1 ;;
+    *) echo "Uso: ./larcerto.sh clear-all [--yes]" >&2; return 1 ;;
   esac
   if [[ $# -gt 1 ]]; then
-    echo "Uso: ./lab.sh clear-all [--yes]" >&2
+    echo "Uso: ./larcerto.sh clear-all [--yes]" >&2
     return 1
   fi
   if [[ "${yes}" -eq 0 ]]; then
@@ -535,5 +535,5 @@ clear_all() {
   run_steps clear start "${CLEAR_STEPS[@]}"
   s=$((SECONDS - TIMER_T0))
   printf 'Tudo apagado em %dmin%02ds\n' $((s / 60)) $((s % 60))
-  echo "Para subir de novo: ./lab.sh all"
+  echo "Para subir de novo: ./larcerto.sh all"
 }

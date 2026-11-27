@@ -1,5 +1,5 @@
 # Comandos Kolla (bootstrap, prechecks, deploy, post-deploy, stop-kolla) via kolla-ansible.
-# Carregado pelo lab.sh; so define funcoes e variaveis. Sem o antigo wrapper na raiz.
+# Carregado pelo larcerto.sh; so define funcoes e variaveis. Sem o antigo wrapper na raiz.
 # shellcheck shell=bash
 
 INVENTORY="${INVENTORY:-${SCRIPT_DIR}/all-in-one}"
@@ -113,7 +113,7 @@ kolla_run() {
     bootstrap) steps=(bootstrap-servers) ;;
     prechecks|deploy|post-deploy|stop|destroy) steps=("${action}") ;;
     *)
-      echo "Uso: ./lab.sh {bootstrap|prechecks|deploy|post-deploy|stop-kolla}" >&2
+      echo "Uso: ./larcerto.sh {bootstrap|prechecks|deploy|post-deploy|stop-kolla}" >&2
       exit 1
       ;;
   esac
@@ -132,7 +132,7 @@ kolla_run() {
 
 cmd_kolla() {
   local action="$1"
-  # Com set -e, uma falha em kolla_run encerra o lab.sh com o mesmo codigo do kolla-ansible.
+  # Com set -e, uma falha em kolla_run encerra o larcerto.sh com o mesmo codigo do kolla-ansible.
   kolla_run "${action}"
   # Padrao do lab AIO: apos subir a nuvem, NIC de gestao fora do br-ex.
   case "${action}" in
@@ -143,7 +143,7 @@ cmd_kolla() {
         echo "AVISO: fix-wired nao confirmou IPv4 (cabo desligado?). Deploy Kolla terminou OK." >&2
       fi
       if ! cmd_ext_net; then
-        echo "AVISO: ext-net falhou. Deploy Kolla terminou OK; tente: ./lab.sh ext-net" >&2
+        echo "AVISO: ext-net falhou. Deploy Kolla terminou OK; tente: ./larcerto.sh ext-net" >&2
       fi
       ;;
   esac

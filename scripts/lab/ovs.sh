@@ -1,5 +1,5 @@
 # OVS do host e containers openvswitch_*: fix-ovs, test-ovs e leitura das portas da br-ex.
-# Carregado pelo lab.sh; so define funcoes e variaveis.
+# Carregado pelo larcerto.sh; so define funcoes e variaveis.
 # shellcheck shell=bash
 
 
@@ -53,7 +53,7 @@ warn_or_fail_mgmt_on_br_ex() {
   printf '%s\n' "${ports}" | sed 's/^/    /'
   if printf '%s\n' "${ports}" | grep -qx "${nif}"; then
     echo "    AVISO: ${nif} (network_interface) esta em br-ex — cabo sem IPv4"
-    echo "    Corre: ./lab.sh fix-wired"
+    echo "    Corre: ./larcerto.sh fix-wired"
     if [[ "${mode}" == "fail" ]]; then
       return 1
     fi
@@ -84,7 +84,7 @@ cmd_fix_ovs() {
   systemctl is-active openvswitch-switch 2>/dev/null || true
   ls -la /run/openvswitch 2>/dev/null || true
   docker_cmd ps -a --filter name=openvswitch --format 'table {{.Names}}\t{{.Status}}' 2>/dev/null || true
-  echo "Pronto. Depois: ./lab.sh deploy   (ou ./lab.sh test-ovs se já tiveres OVS)"
+  echo "Pronto. Depois: ./larcerto.sh deploy   (ou ./larcerto.sh test-ovs se já tiveres OVS)"
 }
 
 
@@ -95,7 +95,7 @@ cmd_test_ovs() {
   host_ovs="$(systemctl is-active openvswitch-switch 2>/dev/null || true)"
   echo "    status: ${host_ovs:-unknown}"
   if [[ "${host_ovs}" == "active" ]]; then
-    echo "    FALHA: OVS do host ativo — ./lab.sh fix-ovs"
+    echo "    FALHA: OVS do host ativo — ./larcerto.sh fix-ovs"
     fail=1
   fi
 
@@ -135,7 +135,7 @@ cmd_test_ovs() {
 
   if [[ "${fail}" -ne 0 ]]; then
     echo
-    echo "OVS NAO OK. pidfile/host: ./lab.sh fix-ovs · cabo no br-ex: ./lab.sh fix-wired"
+    echo "OVS NAO OK. pidfile/host: ./larcerto.sh fix-ovs · cabo no br-ex: ./larcerto.sh fix-wired"
     exit 1
   fi
   echo

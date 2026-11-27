@@ -1,5 +1,5 @@
 # Rede do lab: dummy0, br-ex (fix-wired), ext-net (NAT das floating IPs) e split DNS do host.
-# Carregado pelo lab.sh; so define funcoes e variaveis.
+# Carregado pelo larcerto.sh; so define funcoes e variaveis.
 # shellcheck shell=bash
 
 
@@ -26,7 +26,7 @@ wait_vip() {
   step "Esperar a API da nuvem em ${vip}:5000"
   until curl -s -o /dev/null --noproxy '*' --max-time 3 "http://${vip}:5000/"; do
     if [[ $((SECONDS - t0)) -ge "${VIP_WAIT:-90}" ]]; then
-      echo "AVISO: a API em ${vip}:5000 nao respondeu em ${VIP_WAIT:-90}s (o VIP saiu da interface?); veja ./lab.sh status" >&2
+      echo "AVISO: a API em ${vip}:5000 nao respondeu em ${VIP_WAIT:-90}s (o VIP saiu da interface?); veja ./larcerto.sh status" >&2
       return 1
     fi
     sleep 2
@@ -144,7 +144,7 @@ cmd_ext_net() {
   case "${1:-}" in
     "") ;;
     --down) mode="down" ;;
-    *) echo "Uso: lab.sh ext-net [--down]" >&2; return 1 ;;
+    *) echo "Uso: larcerto.sh ext-net [--down]" >&2; return 1 ;;
   esac
 
   local nif chain i
@@ -154,7 +154,7 @@ cmd_ext_net() {
     sleep 1
   done
   if ! ip link show br-ex >/dev/null 2>&1; then
-    echo "Erro: br-ex nao existe (lab parado? ./lab.sh start)" >&2
+    echo "Erro: br-ex nao existe (lab parado? ./larcerto.sh start)" >&2
     return 1
   fi
   chain="$(forward_chain)"
@@ -196,7 +196,7 @@ cmd_ext_net() {
     fi
   done < <(ext_net_rules "${nif}" "${chain}")
   ip -4 -br addr show br-ex | sed 's/^/    /'
-  echo "ext-net OK (desfazer: ./lab.sh ext-net --down)"
+  echo "ext-net OK (desfazer: ./larcerto.sh ext-net --down)"
 }
 
 
@@ -215,11 +215,11 @@ cmd_dns_host() {
     ip="$(grep -A1 '^\[dns\]' "${INVENTORY_INI}" | grep -oE 'ansible_host=[0-9.]+' | cut -d= -f2)"
   fi
   if [[ -z "${ip}" ]]; then
-    echo "Uso: lab.sh dns-host [<ip da VM dns>|--down] (sem ip: le ${INVENTORY_INI})" >&2
+    echo "Uso: larcerto.sh dns-host [<ip da VM dns>|--down] (sem ip: le ${INVENTORY_INI})" >&2
     return 1
   fi
   step "dns-host: ~${DNS_DOMAIN} -> ${ip} (via br-ex)"
   run_as_root resolvectl dns br-ex "${ip}"
   run_as_root resolvectl domain br-ex "~${DNS_DOMAIN}"
-  echo "Teste: resolvectl query www.${DNS_DOMAIN}   (desfazer: ./lab.sh dns-host --down)"
+  echo "Teste: resolvectl query www.${DNS_DOMAIN}   (desfazer: ./larcerto.sh dns-host --down)"
 }

@@ -53,11 +53,11 @@ if [[ ! -x "${OPENSTACK}" ]]; then
   exit 1
 fi
 if [[ ! -f "${OS_CLIENT_CONFIG_FILE}" ]]; then
-  echo "Erro: ${OS_CLIENT_CONFIG_FILE} nao existe (rode ./lab.sh post-deploy)" >&2
+  echo "Erro: ${OS_CLIENT_CONFIG_FILE} nao existe (rode ./larcerto.sh post-deploy)" >&2
   exit 1
 fi
 
-# Logo depois do lab.sh start, o fix-wired reconecta o cabo e o VIP some por alguns segundos.
+# Logo depois do larcerto.sh start, o fix-wired reconecta o cabo e o VIP some por alguns segundos.
 # Sem esperar, um "show" que falha por rede vira "nao existe" e o create bate em recurso existente.
 step "Esperando a API do OpenStack responder"
 api_ok=0
@@ -69,7 +69,7 @@ for _ in $(seq 1 "${API_WAIT_TRIES}"); do
   sleep 2
 done
 if [[ "${api_ok}" -ne 1 ]]; then
-  echo "Erro: a API do OpenStack nao respondeu em $((API_WAIT_TRIES * 2))s (teste ./lab.sh status)" >&2
+  echo "Erro: a API do OpenStack nao respondeu em $((API_WAIT_TRIES * 2))s (teste ./larcerto.sh status)" >&2
   exit 1
 fi
 

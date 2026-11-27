@@ -1,22 +1,22 @@
-# `lab.sh`
+# `larcerto.sh`
 
 Entrypoint único do lab AIO (dummy0, OVS host, testes, stop/start, fixes e deploy Kolla).
 
 ```bash
-./lab.sh <comando> [opções]
+./larcerto.sh <comando> [opções]
 ```
 
-Código: [`../lab.sh`](../lab.sh). O `lab.sh` só carrega os módulos de `scripts/` com `source`, imprime o `usage` e despacha o comando. Cada assunto fica num arquivo:
+Código: [`../larcerto.sh`](../larcerto.sh). O `larcerto.sh` só carrega os módulos de `scripts/` com `source`, imprime o `usage` e despacha o comando. Cada assunto fica num arquivo:
 
 | Módulo | Origem | Conteúdo |
 |--------|--------|----------|
 | [`scripts/common.sh`](../scripts/common.sh) | compartilhado | `step`, `run_as_root`, `docker_cmd`, `read_globals` |
-| [`scripts/lab/rede.sh`](../scripts/lab/rede.sh) | `lab.sh` | `dummy0`, `fix-wired`, `ext-net`, `dns-host` |
-| [`scripts/lab/ovs.sh`](../scripts/lab/ovs.sh) | `lab.sh` | `fix-ovs`, `test-ovs` e leitura das portas da `br-ex` |
-| [`scripts/lab/ciclo.sh`](../scripts/lab/ciclo.sh) | `lab.sh` | `prep`, `status`, `start`, `stop`, `fix-horizon` |
-| [`scripts/lab/install.sh`](../scripts/lab/install.sh) | `lab.sh` | `all` (15 etapas, `--from`), `install-app` (8 etapas, `--from`), `start-app` (religa a instalação), `recreate-app` (apaga e recria a infra da app) |
-| [`scripts/lab/cert.sh`](../scripts/lab/cert.sh) | `lab.sh` | `cert` (`status`, `renew`, `renew --new-ca`, `trust`, `cloud`) do certificado da LarCerto e do Horizon |
-| [`scripts/lab/vms.sh`](../scripts/lab/vms.sh) | `lab.sh` | `vms`: lista as VMs do projeto `larcerto` (só leitura) |
+| [`scripts/lab/rede.sh`](../scripts/lab/rede.sh) | `larcerto.sh` | `dummy0`, `fix-wired`, `ext-net`, `dns-host` |
+| [`scripts/lab/ovs.sh`](../scripts/lab/ovs.sh) | `larcerto.sh` | `fix-ovs`, `test-ovs` e leitura das portas da `br-ex` |
+| [`scripts/lab/ciclo.sh`](../scripts/lab/ciclo.sh) | `larcerto.sh` | `prep`, `status`, `start`, `stop`, `fix-horizon` |
+| [`scripts/lab/install.sh`](../scripts/lab/install.sh) | `larcerto.sh` | `all` (15 etapas, `--from`), `install-app` (8 etapas, `--from`), `start-app` (religa a instalação), `recreate-app` (apaga e recria a infra da app) |
+| [`scripts/lab/cert.sh`](../scripts/lab/cert.sh) | `larcerto.sh` | `cert` (`status`, `renew`, `renew --new-ca`, `trust`, `cloud`) do certificado da LarCerto e do Horizon |
+| [`scripts/lab/vms.sh`](../scripts/lab/vms.sh) | `larcerto.sh` | `vms`: lista as VMs do projeto `larcerto` (só leitura) |
 | [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.sh) | wrapper Kolla removido | `bootstrap`, `prechecks`, `deploy`, `post-deploy`, `stop-kolla` |
 | [`scripts/kolla/zorin_facts.py`](../scripts/kolla/zorin_facts.py) | wrapper Kolla removido | facts do Zorin para o Kolla |
 
@@ -36,7 +36,7 @@ Os arquivos de `scripts/` só definem funções e variáveis: nada roda ao carre
 
 - `step <texto>` — imprime o cabeçalho de etapa `==> <texto>`.
 - `read_globals <key> <default>` — lê linha ativa `key: value` em `globals.yml` (ignora comentários); imprime o default se ausente.
-- `stop_host_libvirt` — se alguma unidade do libvirt do host (`libvirtd.socket`, `libvirtd`, `virtlogd.socket`, `virtlogd`) está ativa, roda `systemctl stop` nas quatro com `run_as_root` (root) e imprime `libvirt do host parado (conflita com o nova_libvirt)`. Só `stop`, nunca `disable`: o libvirt do host volta no próximo boot. Com `AUTO_STOP_HOST_LIBVIRT=false` não mexe e avisa `AVISO: libvirt do host ativo; as VMs podem nascer em ERROR`. Se o `stop` não pegar (sem root), avisa `AVISO: o libvirt do host continua ativo (o stop precisa de root)...` e o `start` não reinicia os containers. Usada pelo `start` e pelas etapas do Kolla. Para devolver o libvirt ao host: `sudo systemctl start libvirtd.socket virtlogd.socket` (enquanto ele estiver ativo, VMs novas do OpenStack nascem em `ERROR`; o próximo `lab.sh start` para de novo).
+- `stop_host_libvirt` — se alguma unidade do libvirt do host (`libvirtd.socket`, `libvirtd`, `virtlogd.socket`, `virtlogd`) está ativa, roda `systemctl stop` nas quatro com `run_as_root` (root) e imprime `libvirt do host parado (conflita com o nova_libvirt)`. Só `stop`, nunca `disable`: o libvirt do host volta no próximo boot. Com `AUTO_STOP_HOST_LIBVIRT=false` não mexe e avisa `AVISO: libvirt do host ativo; as VMs podem nascer em ERROR`. Se o `stop` não pegar (sem root), avisa `AVISO: o libvirt do host continua ativo (o stop precisa de root)...` e o `start` não reinicia os containers. Usada pelo `start` e pelas etapas do Kolla. Para devolver o libvirt ao host: `sudo systemctl start libvirtd.socket virtlogd.socket` (enquanto ele estiver ativo, VMs novas do OpenStack nascem em `ERROR`; o próximo `larcerto.sh start` para de novo).
 
   Por quê: o `nova_libvirt` compartilha o `/run` do host. Com o `virtlogd` do host ativo (ele sobe no boot), é ele quem atende o libvirt do Kolla, não acha `/var/lib/nova/instances/<id>/console.log` (que só existe no volume do container) e as VMs nascem em `ERROR` ("Exceeded maximum number of retries").
 
@@ -75,7 +75,7 @@ Leem `globals.yml` via `read_globals`:
 
 ### `warn_or_fail_mgmt_on_br_ex`
 
-Modo `warn` ou `fail`. Lista portas de `br-ex`; se a NIC de gestão estiver lá, avisa (e falha no modo `fail`). Sugere `./lab.sh fix-wired`.
+Modo `warn` ou `fail`. Lista portas de `br-ex`; se a NIC de gestão estiver lá, avisa (e falha no modo `fail`). Sugere `./larcerto.sh fix-wired`.
 
 ### `usage`
 
@@ -83,7 +83,7 @@ Imprime help CLI (`help` / `-h` / `--help`).
 
 ### `cmd_kolla`
 
-Chama `kolla_run <ação>` de [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.sh). Se o Kolla falhar, o `lab.sh` sai com o mesmo código. Se a ação for `deploy` ou `post-deploy` e o Kolla terminar com sucesso, corre `cmd_fix_wired` automaticamente (NIC de gestão fora do `br-ex`); se o `fix-wired` falhar, imprime `AVISO` no stderr e sai com 0, porque o deploy deu certo.
+Chama `kolla_run <ação>` de [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.sh). Se o Kolla falhar, o `larcerto.sh` sai com o mesmo código. Se a ação for `deploy` ou `post-deploy` e o Kolla terminar com sucesso, corre `cmd_fix_wired` automaticamente (NIC de gestão fora do `br-ex`); se o `fix-wired` falhar, imprime `AVISO` no stderr e sai com 0, porque o deploy deu certo.
 
 ---
 
@@ -104,15 +104,15 @@ Chama `kolla_run <ação>` de [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.
 | `dns-host` | `cmd_dns_host` | Split DNS do host: só `~larcerto.com.br` na `br-ex` vai para a VM `dns` (`--down` desfaz) |
 | `install-app` | `install_app` (`scripts/lab/install.sh`) | Confere os pré-requisitos (instala o Terraform se faltar) e sobe nuvem + app em 8 etapas (`--from <etapa>` continua de uma etapa); para na que falhar e mostra como continuar |
 | `start-app` | `start_app` (`scripts/lab/install.sh`) | Religa uma instalação existente: `start`, VMs `SHUTOFF`, `dns-host` e `checks`; sem `bootstrap`, Terraform ou Ansible |
-| `recreate-app` | `recreate_app` (`scripts/lab/install.sh`) | `./lab.sh recreate-app [--yes]`: pede para digitar `larcerto` (o `--yes` pula), depois `prereqs` → `start` → `destroy` (`terraform destroy -auto-approve` como `devops1`) → `terraform` → `nuvem` → `app` → `dns-host` → `checks`; termina com `Recriado em <M>min<S>s` (do `destroy` ao `checks`). Falhou: mostra a etapa e `install-app --from <etapa>` (ou `recreate-app`, se foi o `destroy`). Usa root no `start` (libvirt, `dummy0`, `ext-net`) e no `dns-host` (`resolvectl`), pelo `run_as_root`: sem sudo NOPASSWD e sem grupo `docker`, o `sudo` pede a senha |
-| `cert` | `cert_main` (`scripts/lab/cert.sh`) | Certificado da LarCerto. `status` (padrão): CN, SAN, validade, `openssl verify` e se o `web` serve o mesmo (exit 0; 1 se falta arquivo; 2 se a cadeia não confere, expirou ou o `web` serve outro). `renew`: `site.yml --limit ca,web -e cert_renew=true` (mesma CA). `renew --new-ca [--yes]`: pede `nova-ca`, copia `files/pki/` para `backup-<data>/` e roda com `ca_new=true`. `trust`: `certutil -A` em cada banco NSS do usuário (sem `sudo`; sai 1 se um banco falha). `cloud` (`./lab.sh cert cloud`): se `files/pki/cloud.crt` falta ou não confere com a CA, `site.yml --limit ca -e cert_cloud=true` (SAN `cloud` e `horizon`); depois grava `/etc/kolla/haproxy/haproxy.pem` (cert + CA + chave, root 600, pelo `run_as_root`), e, se o frontend 443 já existe, roda `docker restart haproxy`; senão pede o `deploy` que cria o frontend 443 de `https://cloud.larcerto.com.br`; o `status` ganha o bloco `Horizon (cloud)` |
+| `recreate-app` | `recreate_app` (`scripts/lab/install.sh`) | `./larcerto.sh recreate-app [--yes]`: pede para digitar `larcerto` (o `--yes` pula), depois `prereqs` → `start` → `destroy` (`terraform destroy -auto-approve` como `devops1`) → `terraform` → `nuvem` → `app` → `dns-host` → `checks`; termina com `Recriado em <M>min<S>s` (do `destroy` ao `checks`). Falhou: mostra a etapa e `install-app --from <etapa>` (ou `recreate-app`, se foi o `destroy`). Usa root no `start` (libvirt, `dummy0`, `ext-net`) e no `dns-host` (`resolvectl`), pelo `run_as_root`: sem sudo NOPASSWD e sem grupo `docker`, o `sudo` pede a senha |
+| `cert` | `cert_main` (`scripts/lab/cert.sh`) | Certificado da LarCerto. `status` (padrão): CN, SAN, validade, `openssl verify` e se o `web` serve o mesmo (exit 0; 1 se falta arquivo; 2 se a cadeia não confere, expirou ou o `web` serve outro). `renew`: `site.yml --limit ca,web -e cert_renew=true` (mesma CA). `renew --new-ca [--yes]`: pede `nova-ca`, copia `files/pki/` para `backup-<data>/` e roda com `ca_new=true`. `trust`: `certutil -A` em cada banco NSS do usuário (sem `sudo`; sai 1 se um banco falha). `cloud` (`./larcerto.sh cert cloud`): se `files/pki/cloud.crt` falta ou não confere com a CA, `site.yml --limit ca -e cert_cloud=true` (SAN `cloud` e `horizon`); depois grava `/etc/kolla/haproxy/haproxy.pem` (cert + CA + chave, root 600, pelo `run_as_root`), e, se o frontend 443 já existe, roda `docker restart haproxy`; senão pede o `deploy` que cria o frontend 443 de `https://cloud.larcerto.com.br`; o `status` ganha o bloco `Horizon (cloud)` |
 | `vms` | `cmd_vms` (`scripts/lab/vms.sh`) | VMs do projeto `larcerto` pela API, como `devops1`: nome, status, IP privado, floating IP (o IP em `172.24.4.0/24`) e uma linha de `ssh` por VM `ACTIVE` com floating IP. Só `server list`. Sai 1 se falta `cloud/secrets/clouds.yaml`, o cliente `openstack` do venv ou a API não responde |
 | `bootstrap` | `cmd_kolla` | → `kolla_run bootstrap` |
 | `prechecks` | `cmd_kolla` | → `kolla_run prechecks` |
 | `deploy` | `cmd_kolla` | → `kolla_run deploy` + `fix-wired` + `ext-net` |
 | `post-deploy` | `cmd_kolla` | → `kolla_run post-deploy` + `fix-wired` + `ext-net` |
-| `all` | `run_all` (`scripts/lab/install.sh`) | `./lab.sh all [--from <etapa>]`: sobe o projeto inteiro em 15 etapas, sem apagar nada: `prep` → `prechecks` → `deploy` → `post-deploy` → `prereqs` → `start` → `bootstrap` → `terraform` → `nuvem` → `app` → `dns-host` → `checks` → `cert-cloud` → `deploy-https` → `https-cloud`. Falhou: mostra a etapa e `all --from <etapa>`. Numa máquina nova, rode antes `./lab.sh bootstrap`. Repetir com a nuvem no ar corta a rede das VMs até o `deploy` recriar o OVS |
-| `clear-all` | `clear_all` (`scripts/lab/install.sh`) | `./lab.sh clear-all [--yes]`: **apaga** o projeto inteiro e não sobe nada de volta (não é um reinício; para subir de novo, `./lab.sh all`). Sem `--yes`, mostra o que sai e o que fica e pede para digitar yes (qualquer outra resposta cancela). 9 etapas: `start` (só com containers do Kolla e `terraform/terraform.tfstate`: a API precisa responder) → `destroy-app` (`terraform destroy -auto-approve` como `devops1`) → `dns-host` (`resolvectl revert br-ex`) → `ext-net` (`ext-net --down`, se a `br-ex` existe) → `kolla` (`kolla-ansible destroy --yes-i-really-really-mean-it`, sem `--include-images`: containers, volumes e `/etc/kolla/<serviço>`) → `app-local` (containers do projeto Compose `larcerto`, volumes `larcerto_db_data` e `larcerto_uploads`, imagens `larcerto-web` e `larcerto-tests`) → `files` (`terraform/terraform.tfstate` e `terraform/terraform.tfstate.backup`, `ansible/inventory/hosts.ini`, `cloud/secrets/clouds.yaml`, `cloud/secrets/devops1.password`, `kolla-config/clouds.yaml`, `kolla-config/*-openrc*.sh` e tudo em `ansible/files/pki/` menos o `.gitkeep`: a CA morre) → `trust` (`certutil -D` da `CA LarCerto` em cada banco NSS) → `cabo` (`fix-wired`). Ficam: `kolla-config/passwords.yml`, `kolla-config/globals.yml`, `app/.env`, `ansible/group_vars/all/secrets.yml`, a chave SSH, o venv, o Terraform e as imagens do Kolla. `start`, `destroy-app`, `dns-host`, `ext-net` e `trust` pulam (`pulado:`) o que já não existe, e as outras não falham quando o que apagam já sumiu; então, se uma etapa falhar, `./lab.sh clear-all --yes` continua. O `cleanup-host` do Kolla apaga **todos** os network namespaces e as interfaces `tap*`, `brq*` e `vxlan*` do host |
+| `all` | `run_all` (`scripts/lab/install.sh`) | `./larcerto.sh all [--from <etapa>]`: sobe o projeto inteiro em 15 etapas, sem apagar nada: `prep` → `prechecks` → `deploy` → `post-deploy` → `prereqs` → `start` → `bootstrap` → `terraform` → `nuvem` → `app` → `dns-host` → `checks` → `cert-cloud` → `deploy-https` → `https-cloud`. Falhou: mostra a etapa e `all --from <etapa>`. Numa máquina nova, rode antes `./larcerto.sh bootstrap`. Repetir com a nuvem no ar corta a rede das VMs até o `deploy` recriar o OVS |
+| `clear-all` | `clear_all` (`scripts/lab/install.sh`) | `./larcerto.sh clear-all [--yes]`: **apaga** o projeto inteiro e não sobe nada de volta (não é um reinício; para subir de novo, `./larcerto.sh all`). Sem `--yes`, mostra o que sai e o que fica e pede para digitar yes (qualquer outra resposta cancela). 9 etapas: `start` (só com containers do Kolla e `terraform/terraform.tfstate`: a API precisa responder) → `destroy-app` (`terraform destroy -auto-approve` como `devops1`) → `dns-host` (`resolvectl revert br-ex`) → `ext-net` (`ext-net --down`, se a `br-ex` existe) → `kolla` (`kolla-ansible destroy --yes-i-really-really-mean-it`, sem `--include-images`: containers, volumes e `/etc/kolla/<serviço>`) → `app-local` (containers do projeto Compose `larcerto`, volumes `larcerto_db_data` e `larcerto_uploads`, imagens `larcerto-web` e `larcerto-tests`) → `files` (`terraform/terraform.tfstate` e `terraform/terraform.tfstate.backup`, `ansible/inventory/hosts.ini`, `cloud/secrets/clouds.yaml`, `cloud/secrets/devops1.password`, `kolla-config/clouds.yaml`, `kolla-config/*-openrc*.sh` e tudo em `ansible/files/pki/` menos o `.gitkeep`: a CA morre) → `trust` (`certutil -D` da `CA LarCerto` em cada banco NSS) → `cabo` (`fix-wired`). Ficam: `kolla-config/passwords.yml`, `kolla-config/globals.yml`, `app/.env`, `ansible/group_vars/all/secrets.yml`, a chave SSH, o venv, o Terraform e as imagens do Kolla. `start`, `destroy-app`, `dns-host`, `ext-net` e `trust` pulam (`pulado:`) o que já não existe, e as outras não falham quando o que apagam já sumiu; então, se uma etapa falhar, `./larcerto.sh clear-all --yes` continua. O `cleanup-host` do Kolla apaga **todos** os network namespaces e as interfaces `tap*`, `brq*` e `vxlan*` do host |
 | `stop-kolla` | `cmd_kolla` | → `kolla_run stop` |
 | `help` | `usage` | Ajuda |
 
@@ -161,7 +161,7 @@ Exit 1 se algum check falhar.
 
 #### `cmd_fix_horizon` (`fix-horizon`)
 
-`docker rm -f horizon` para desbloquear recreate com erro 409. Depois: `./lab.sh deploy`.
+`docker rm -f horizon` para desbloquear recreate com erro 409. Depois: `./larcerto.sh deploy`.
 
 #### `cmd_status` (`status`)
 
@@ -235,22 +235,22 @@ Os comandos `bootstrap`, `prechecks`, `deploy`, `post-deploy` e `stop-kolla` rod
 | `AUTO_STOP_HOST_LIBVIRT` | `true` | Para o libvirt do host (`stop_host_libvirt`) antes de cada etapa do Kolla e no `start` (conflita com o `nova_libvirt`) |
 | `OS_RELEASE` | `/etc/os-release` | Arquivo lido para detectar Zorin |
 
-Ordem das etapas: `bootstrap` = `bootstrap-servers`; os demais rodam a própria ação. Os arquivos temporários de facts são removidos ao sair do `lab.sh`, mesmo se o kolla-ansible falhar.
+Ordem das etapas: `bootstrap` = `bootstrap-servers`; os demais rodam a própria ação. Os arquivos temporários de facts são removidos ao sair do `larcerto.sh`, mesmo se o kolla-ansible falhar.
 
 ## Testes
 
-`bash tests/test-scripts.sh [teste ...]` testa `lab.sh` e os módulos de `scripts/` com comandos falsos no `PATH` (nada toca o host; não rodar como root).
+`bash tests/test-scripts.sh [teste ...]` testa `larcerto.sh` e os módulos de `scripts/` com comandos falsos no `PATH` (nada toca o host; não rodar como root).
 
 ## Exemplos
 
 ```bash
-chmod +x lab.sh
-./lab.sh prep
-./lab.sh bootstrap && ./lab.sh prechecks && ./lab.sh deploy
-./lab.sh post-deploy
-./lab.sh test-ovs
-./lab.sh fix-wired
-./lab.sh status
-./lab.sh stop
-./lab.sh start
+chmod +x larcerto.sh
+./larcerto.sh prep
+./larcerto.sh bootstrap && ./larcerto.sh prechecks && ./larcerto.sh deploy
+./larcerto.sh post-deploy
+./larcerto.sh test-ovs
+./larcerto.sh fix-wired
+./larcerto.sh status
+./larcerto.sh stop
+./larcerto.sh start
 ```

@@ -1,4 +1,4 @@
-# Helpers compartilhados pelos modulos de scripts/ (carregados pelo lab.sh).
+# Helpers compartilhados pelos modulos de scripts/ (carregados pelo larcerto.sh).
 # Carregar com: source "${SCRIPT_DIR}/scripts/common.sh" (SCRIPT_DIR = raiz do repo).
 # shellcheck shell=bash
 

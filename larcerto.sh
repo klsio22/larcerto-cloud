@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Entrypoint único do lab AIO (dummy0, OVS host, testes, stop, fixes).
-# Uso: ./lab.sh <comando> [opções]
+# Uso: ./larcerto.sh <comando> [opções]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,7 +26,7 @@ source "${SCRIPT_DIR}/scripts/lab/vms.sh"
 
 usage() {
   cat <<'EOF'
-Uso: ./lab.sh <comando> [opções]
+Uso: ./larcerto.sh <comando> [opções]
 
 Comandos:
   help           Mostra esta ajuda (-h, --help)
@@ -35,7 +35,7 @@ Comandos:
   fix-ovs        Para OVS do host, limpa /run/openvswitch, remove containers OVS Kolla
   fix-wired      Tira network_interface de br-ex e reativa a cabo no NetworkManager
   test-ovs       Teste rápido (segundos) do openvswitch_db / vswitchd
-  fix-horizon    Remove container horizon em conflito 409 (depois: lab.sh deploy)
+  fix-horizon    Remove container horizon em conflito 409 (depois: larcerto.sh deploy)
   status         Estado rápido: dummy0, OVS, br-ex, Horizon, VIP
   stop           Para o lab e impede autostart no boot [--remove]
   start          Sobe o lab já deployado (dummy0 + kolla-* + ext-net + fix-wired)
@@ -44,8 +44,8 @@ Comandos:
   all            Sobe o projeto inteiro, sem apagar nada [--from <etapa>]
                  (etapas: prep prechecks deploy post-deploy prereqs start bootstrap terraform nuvem
                   app dns-host checks cert-cloud deploy-https https-cloud)
-                 Continuar de uma etapa: ./lab.sh all --from <etapa>
-                 Maquina nova: rode antes ./lab.sh bootstrap
+                 Continuar de uma etapa: ./larcerto.sh all --from <etapa>
+                 Maquina nova: rode antes ./larcerto.sh bootstrap
   install-app    Confere pre-requisitos e sobe nuvem + app em sequencia [--from <etapa>]
                  (etapas: prereqs start bootstrap terraform nuvem app dns-host checks)
   start-app      Religa uma instalacao existente (VMs SHUTOFF, dns-host, checks)
@@ -57,7 +57,7 @@ Comandos:
                  apaga: VMs, OpenStack (containers e volumes), app local, tfstate, inventario,
                         credenciais geradas, a CA e os certificados, a CA nos navegadores
                  ficam: passwords.yml, globals.yml, app/.env, secrets.yml, chave SSH, imagens do Kolla
-                 Para subir de novo: ./lab.sh all
+                 Para subir de novo: ./larcerto.sh all
   vms            VMs do projeto larcerto: status, IP privado, floating IP e linha de ssh (so leitura)
   cert           Certificado da LarCerto: status (padrão) | renew [--new-ca [--yes]] | trust | cloud
                  status: validade e se o web (e o Horizon) serve o mesmo certificado
@@ -70,15 +70,15 @@ Comandos:
                  (deploy / post-deploy: depois corre fix-wired e ext-net automaticamente)
 
 Exemplos:
-  chmod +x lab.sh
-  ./lab.sh prep
-  ./lab.sh bootstrap && ./lab.sh prechecks && ./lab.sh deploy
-  ./lab.sh post-deploy
-  ./lab.sh test-ovs
-  ./lab.sh fix-wired
-  ./lab.sh status
-  ./lab.sh stop
-  ./lab.sh start
+  chmod +x larcerto.sh
+  ./larcerto.sh prep
+  ./larcerto.sh bootstrap && ./larcerto.sh prechecks && ./larcerto.sh deploy
+  ./larcerto.sh post-deploy
+  ./larcerto.sh test-ovs
+  ./larcerto.sh fix-wired
+  ./larcerto.sh status
+  ./larcerto.sh stop
+  ./larcerto.sh start
 EOF
 }
 

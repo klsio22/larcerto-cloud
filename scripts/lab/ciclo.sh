@@ -1,5 +1,5 @@
 # Ciclo de vida do lab: prep, status, start, stop e fix-horizon.
-# Carregado pelo lab.sh; so define funcoes e variaveis.
+# Carregado pelo larcerto.sh; so define funcoes e variaveis.
 # shellcheck shell=bash
 
 # Unidades systemd kolla-* (list-unit-files sobrevive a reboot / disable).
@@ -16,7 +16,7 @@ cmd_fix_horizon() {
   step "Remover container horizon (resolve 409 Conflict no recreate)"
   docker_cmd rm -f horizon 2>/dev/null || true
   docker_cmd ps -a --filter name=horizon --format 'table {{.Names}}\t{{.Status}}' || true
-  echo "Pronto. Recria com: ./lab.sh deploy"
+  echo "Pronto. Recria com: ./larcerto.sh deploy"
   echo "(Se Horizon já abria no browser e estava healthy, podes ignorar e só usar o login.)"
 }
 
@@ -27,10 +27,10 @@ cmd_prep() {
   cmd_fix_ovs
   echo
   echo "Prep OK. Fluxo: bootstrap → prechecks → deploy → post-deploy"
-  echo "  ./lab.sh bootstrap"
-  echo "  ./lab.sh prechecks"
-  echo "  ./lab.sh deploy"
-  echo "  ./lab.sh post-deploy"
+  echo "  ./larcerto.sh bootstrap"
+  echo "  ./larcerto.sh prechecks"
+  echo "  ./larcerto.sh deploy"
+  echo "  ./larcerto.sh post-deploy"
   echo "(deploy/all/post-deploy ja aplicam fix-wired no fim)"
 }
 
@@ -48,7 +48,7 @@ cmd_status() {
   if ip link show "${ext}" >/dev/null 2>&1; then
     ip -br link show "${ext}" | sed 's/^/    /'
   else
-    echo "    ausente — ./lab.sh dummy0"
+    echo "    ausente — ./larcerto.sh dummy0"
   fi
 
   step "${nif} (cabo / gestao)"
@@ -85,7 +85,7 @@ cmd_stop() {
       --remove) REMOVE_AFTER_STOP=true; shift ;;
       --disable-kolla-services) shift ;; # já é o padrão (compat)
       -h|--help)
-        echo "Uso: lab.sh stop [--remove]"
+        echo "Uso: larcerto.sh stop [--remove]"
         echo "Para kolla-*, desabilita autostart no boot e para os containers."
         exit 0
         ;;
@@ -144,8 +144,8 @@ cmd_start() {
   local kolla_ids
   kolla_ids="$("${DOCKER[@]}" ps -aq --filter label=kolla_version 2>/dev/null || true)"
   if [[ -z "${kolla_ids}" ]]; then
-    echo "Nenhum container Kolla encontrado (lab.sh stop --remove ou ainda sem deploy)." >&2
-    echo "Corre: ./lab.sh deploy" >&2
+    echo "Nenhum container Kolla encontrado (larcerto.sh stop --remove ou ainda sem deploy)." >&2
+    echo "Corre: ./larcerto.sh deploy" >&2
     exit 1
   fi
 
@@ -181,7 +181,7 @@ cmd_start() {
 
   echo
   if ! cmd_ext_net; then
-    echo "AVISO: ext-net falhou; VMs sem acesso pelo host. Tente: ./lab.sh ext-net" >&2
+    echo "AVISO: ext-net falhou; VMs sem acesso pelo host. Tente: ./larcerto.sh ext-net" >&2
   fi
 
   echo

@@ -19,8 +19,8 @@ Referências:
 ## Aplicar
 
 ```bash
-./lab.sh fix-horizon   # só se 409 Conflict
-./lab.sh deploy
+./larcerto.sh fix-horizon   # só se 409 Conflict
+./larcerto.sh deploy
 ```
 
 No browser: hard refresh → menu utilizador → **Temas** → **Lux**.
@@ -30,4 +30,4 @@ No browser: hard refresh → menu utilizador → **Temas** → **Lux**.
 1. Remover `horizon_custom_themes` de `globals.yml`
 2. Remover `DEFAULT_THEME` (ou o ficheiro `_9999-custom-settings.py`)
 3. Remover a pasta `config/horizon/themes/lux/`
-4. `./lab.sh deploy`
+4. `./larcerto.sh deploy`
