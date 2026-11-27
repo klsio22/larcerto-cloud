@@ -120,7 +120,8 @@ cmd_venv() {
   kolla_ensure_py_module docker docker
   kolla_ensure_py_module dbus dbus-python
   step "Colecoes do Ansible (kolla-ansible install-deps)"
-  "${bin}/kolla-ansible" install-deps
+  # install-deps chama ansible-galaxy pelo PATH: sem o venv ativado, so o bin do venv o tem
+  PATH="${bin}:${PATH}" "${bin}/kolla-ansible" install-deps
   : >"${mark}"
   venv_passwords
   echo "venv OK: ${VENV_PATH}"

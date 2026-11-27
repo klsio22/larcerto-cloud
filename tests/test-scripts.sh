@@ -380,7 +380,13 @@ EOF
   cat >"${T}/venvtpl/kolla-ansible" <<'EOF'
 #!/usr/bin/env bash
 echo "kolla $*" >>"$FAKE_LOG"
+# o install-deps real chama ansible-galaxy pelo PATH (precisa ser o do venv)
+if [[ "$1" == install-deps ]]; then
+  g="$(command -v ansible-galaxy || true)"
+  [[ "${g}" == "$(cd "$(dirname "$0")" && pwd)/ansible-galaxy" ]] || { echo "[Errno 2] No such file or directory: 'ansible-galaxy'" >&2; exit 1; }
+fi
 EOF
+  printf '#!/usr/bin/env bash\nexit 0\n' >"${T}/venvtpl/bin/ansible-galaxy"
   cat >"${T}/venvtpl/kolla-genpwd" <<'EOF'
 #!/usr/bin/env bash
 echo "kolla-genpwd $*" >>"$FAKE_LOG"
