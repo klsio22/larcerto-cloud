@@ -66,7 +66,7 @@ Leem `globals.yml` via `read_globals`:
 - `is_virtual_iface` — interface sem placa por trás (sem `/sys/class/net/<if>/device`; `SYS_CLASS_NET` troca a pasta nos testes).
 - `host_net_cidr` — IP do host na rede do VIP: `<3 primeiros octetos do VIP>.1/24` (`10.99.0.1/24`).
 - `kolla_check_hostname` (`scripts/kolla/kolla.sh`) — antes do `prechecks` e do `deploy`, só leitura: o hostname (nome curto) tem de resolver (`getent ahostsv4`) só para o primeiro IPv4 do `network_interface`, como exige o precheck do rabbitmq. Senão: `Erro: o hostname ... resolve para ...` + `Rode ./larcerto.sh bootstrap` e sai 1, sem chamar o kolla-ansible. Sem IP na interface, não checa.
-- `host_net_up` — com `network_interface` `dummy*`: cria a interface, põe `host_net_cidr` (sem duplicar) e sobe; placa física: nada. Chamado pelo `dummy0`, `prep` e `start`, e antes do kolla-ansible no `bootstrap`, `prechecks` e `deploy` (máquina nova sem `prep`).
+- `host_net_up` — com `network_interface` `dummy*`: cria a interface, põe `host_net_cidr` (sem duplicar), liga o `multicast` (o VRRP do keepalived precisa; sem ele o keepalived desliga o VIP, e se o keepalived já estiver no ar é reiniciado) e sobe; placa física: nada. Chamado pelo `dummy0`, `prep` e `start`, e antes do kolla-ansible no `bootstrap`, `prechecks` e `deploy` (máquina nova sem `prep`).
 - `uplink_iface` — placa da rota padrão (`ip route get 1.1.1.1`): saída do NAT das VMs.
 - `external_iface` — `neutron_external_interface` (default `dummy0`).
 - `vip_address` — `kolla_internal_vip_address` (default `10.99.0.250`).

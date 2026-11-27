@@ -52,6 +52,16 @@ host_net_up() {
   if ! ip -4 -o addr show "${nif}" 2>/dev/null | grep -q "inet ${cidr} "; then
     run_as_root ip addr add "${cidr}" dev "${nif}"
   fi
+  # dummy nasce sem MULTICAST; o keepalived anuncia o VIP por VRRP multicast e, sem a flag,
+  # desliga a instancia ("does not support multicast ... disabling") e o VIP nunca aparece.
+  if ! ip -br link show "${nif}" 2>/dev/null | grep -qE '[<,]MULTICAST[,>]'; then
+    run_as_root ip link set "${nif}" multicast on
+    # keepalived ja no ar desligou a instancia ao subir: so volta a ler a interface reiniciando
+    if docker_cmd ps --format '{{.Names}}' 2>/dev/null | grep -qx keepalived; then
+      docker_cmd restart keepalived >/dev/null
+      echo "keepalived reiniciado (${nif} agora com multicast)."
+    fi
+  fi
   if ! ip -br link show "${nif}" 2>/dev/null | grep -q 'UP'; then
     run_as_root ip link set "${nif}" up
   fi

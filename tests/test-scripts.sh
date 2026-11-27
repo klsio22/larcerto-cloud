@@ -130,7 +130,10 @@ case "$*" in
   "link add dummy1 type dummy") touch "'"${T}"'/dummy1" ;;
   "addr add "*" dev dummy1") echo "$3" >>"'"${T}"'/dummy1_addr" ;;
   "-4 -o addr show dummy1") [[ -s "'"${T}"'/dummy1_addr" ]] && while read -r a; do echo "7: dummy1    inet $a scope global dummy1"; done <"'"${T}"'/dummy1_addr" ;;
-  "-br link show dummy1") [[ -e "'"${T}"'/dummy1" ]] && echo "dummy1 UNKNOWN <BROADCAST,NOARP,UP,LOWER_UP>" ;;
+  "-br link show dummy1") [[ -e "'"${T}"'/dummy1" ]] || exit 1
+    if [[ -e "'"${T}"'/dummy1_mcast" ]]; then echo "dummy1 UNKNOWN 66:9a:4a:ee:70:bc <BROADCAST,MULTICAST,NOARP,UP,LOWER_UP>"
+    else echo "dummy1 UNKNOWN 66:9a:4a:ee:70:bc <BROADCAST,NOARP,UP,LOWER_UP>"; fi ;;
+  "link set dummy1 multicast on") touch "'"${T}"'/dummy1_mcast" ;;
   "addr add "*" dev br-ex") [[ -n "${FAKE_IP_ADD_FAIL:-}" ]] && exit 1; echo "$3" >"$brex" ;;
   "addr del "*" dev br-ex") rm -f "$brex" ;;
   "-4 -o addr show br-ex") [[ -s "$brex" ]] && echo "9: br-ex    inet $(cat "$brex") scope global br-ex" ;;
@@ -747,6 +750,25 @@ test_isolado_bootstrap_creates_host_net() {
     n_kolla="$(grep -n '^kolla ' "${T}/log" | head -1 | cut -d: -f1)"
     [[ -n "${n_kolla}" && "${n_dummy}" -lt "${n_kolla}" ]] || fail "${a}: dummy1 depois do kolla-ansible" || return 1
   done
+}
+
+# keepalived desliga o VIP se a dummy1 nao tem MULTICAST ("does not support multicast")
+test_isolado_host_net_multicast() {
+  isolado_globals
+  run_lab dummy0
+  expect_rc 0 || return 1
+  grep -qx 'ip link set dummy1 multicast on' "${T}/log" || fail "nao ligou o multicast" || return 1
+  if grep -q 'restart keepalived' "${T}/log"; then fail "reiniciou keepalived sem ele no ar"; return 1; fi
+  : >"${T}/log"
+  run_lab dummy0
+  if grep -q 'multicast on' "${T}/log"; then fail "religou o multicast na segunda vez"; return 1; fi
+  # dummy1 sem multicast com o keepalived ja no ar (deploy que falhou): liga e reinicia ele
+  rm -f "${T}/dummy1_mcast"; : >"${T}/log"
+  export FAKE_DOCKER_NAMES="keepalived haproxy"
+  run_lab dummy0
+  expect_rc 0 || return 1
+  grep -qx 'docker restart keepalived' "${T}/log" || fail "nao reiniciou o keepalived" || return 1
+  grep -q '^keepalived reiniciado (dummy1 agora com multicast)' "${T}/out" || fail "sem a linha do restart"
 }
 
 # /etc/hosts do Ubuntu sem o bootstrap: hostname em 127.0.1.1 (precheck do rabbitmq falharia)
