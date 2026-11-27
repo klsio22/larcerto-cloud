@@ -8,6 +8,8 @@ INVENTORY="${PROJECT_DIR}/ansible/inventory/hosts.ini"
 PKI="${PROJECT_DIR}/ansible/files/pki"
 ANSIBLE="${VENV_PATH:-$HOME/venvs/kolla}/bin/ansible"
 DOMAIN="larcerto.com.br"
+# VIP do Kolla (Horizon), lido do globals.yml
+VIP="$(sed -n 's/^kolla_internal_vip_address:[[:space:]]*"\{0,1\}\([0-9.]*\).*/\1/p' "${PROJECT_DIR}/kolla-config/globals.yml")"
 
 fip() {
   grep -A1 "^\[$1\]" "${INVENTORY}" | grep -oE 'ansible_host=[0-9.]+' | cut -d= -f2
@@ -18,7 +20,7 @@ check_dns_www() {
 }
 
 check_dns_cloud() {
-  [[ "$(dig +short @"$(fip dns)" "cloud.${DOMAIN}")" == "192.168.1.250" ]]
+  [[ "$(dig +short @"$(fip dns)" "cloud.${DOMAIN}")" == "${VIP}" ]]
 }
 
 # qualquer nome sem registro proprio cai na web (registro coringa)
@@ -28,7 +30,7 @@ check_dns_coringa() {
 
 # horizon e apelido (CNAME) de cloud
 check_dns_horizon() {
-  [[ "$(dig +short @"$(fip dns)" "horizon.${DOMAIN}" | tr '\n' ' ')" == "cloud.${DOMAIN}. 192.168.1.250 " ]]
+  [[ "$(dig +short @"$(fip dns)" "horizon.${DOMAIN}" | tr '\n' ' ')" == "cloud.${DOMAIN}. ${VIP} " ]]
 }
 
 check_dns_db_from_web() {
@@ -53,7 +55,7 @@ check_https_ok() {
 # Horizon e opcional (REQ12) e so existe depois do ./larcerto.sh cert cloud + deploy.
 check_https_cloud() {
   [[ "$(curl -sS -o /dev/null -w '%{http_code}' --cacert "${PKI}/ca.crt" \
-    --resolve "cloud.${DOMAIN}:443:192.168.1.250" "https://cloud.${DOMAIN}/auth/login/")" == 200 ]]
+    --resolve "cloud.${DOMAIN}:443:${VIP}" "https://cloud.${DOMAIN}/auth/login/")" == 200 ]]
 }
 
 # ad-hoc na VM: imprime so o stdout de um comando que deu certo (rc=0);

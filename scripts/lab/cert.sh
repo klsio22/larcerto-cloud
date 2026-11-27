@@ -177,7 +177,7 @@ cert_status_cloud() {
 
 # VIP do Kolla (onde o HAProxy serve o Horizon).
 cert_vip() {
-  read_globals kolla_internal_vip_address 192.168.1.250
+  read_globals kolla_internal_vip_address 10.99.0.250
 }
 
 

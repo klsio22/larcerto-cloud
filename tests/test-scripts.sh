@@ -42,6 +42,8 @@ setup_sandbox() {
   write_globals 'network_interface: "enp9s0"' 'neutron_external_interface: "dummy0"' \
     'kolla_internal_vip_address: "192.168.1.250"'
   echo 'ID=ubuntu' >"${T}/os-release"
+  # /sys/class/net falso: so placas fisicas tem device/
+  mkdir -p "${T}/sys/enp9s0/device" "${T}/sys/eth9/device" "${T}/sys/wlp3s0/device"
   : >"${T}/log"
 
   fake docker '
@@ -109,6 +111,13 @@ echo "ip $*" >>"$FAKE_LOG"
 brex="'"${T}"'/brex_addr"
 case "$*" in
   "link show br-ex") [[ "${FAKE_NO_BREX:-0}" != 1 ]]; exit ;;
+  "route get 1.1.1.1") [[ "${FAKE_NO_ROUTE:-0}" == 1 ]] && exit 2
+    echo "1.1.1.1 via 192.168.1.1 dev ${FAKE_UPLINK:-enp9s0} src 192.168.1.10 uid 1000"; exit 0 ;;
+  "link show dummy1") [[ -e "'"${T}"'/dummy1" ]]; exit ;;
+  "link add dummy1 type dummy") touch "'"${T}"'/dummy1" ;;
+  "addr add "*" dev dummy1") echo "$3" >>"'"${T}"'/dummy1_addr" ;;
+  "-4 -o addr show dummy1") [[ -s "'"${T}"'/dummy1_addr" ]] && while read -r a; do echo "7: dummy1    inet $a scope global dummy1"; done <"'"${T}"'/dummy1_addr" ;;
+  "-br link show dummy1") [[ -e "'"${T}"'/dummy1" ]] && echo "dummy1 UNKNOWN <BROADCAST,NOARP,UP,LOWER_UP>" ;;
   "addr add "*" dev br-ex") [[ -n "${FAKE_IP_ADD_FAIL:-}" ]] && exit 1; echo "$3" >"$brex" ;;
   "addr del "*" dev br-ex") rm -f "$brex" ;;
   "-4 -o addr show br-ex") [[ -s "$brex" ]] && echo "9: br-ex    inet $(cat "$brex") scope global br-ex" ;;
@@ -174,6 +183,7 @@ EOF
   export KOLLA_BIN="${T}/venv/bin/kolla-ansible"
   export OS_RELEASE="${T}/os-release"
   export AUTO_STOP_HOST_LIBVIRT=false
+  export SYS_CLASS_NET="${T}/sys"
   echo 1 >"${T}/ip_forward"
   export IP_FORWARD_FILE="${T}/ip_forward"
 }
@@ -527,7 +537,7 @@ test_status_vip_fallback() {
   write_globals 'network_interface: "enp9s0"' 'neutron_external_interface: "dummy0"'
   run_lab status
   expect_rc 0 || return 1
-  grep -q '^curl .*http://192\.168\.1\.250/auth/login/' "${T}/log" || fail "curl nao usou o VIP padrao"
+  grep -q '^curl .*http://10\.99\.0\.250/auth/login/' "${T}/log" || fail "curl nao usou o VIP padrao"
 }
 
 LAB_COMMANDS=(help prep dummy0 fix-ovs fix-wired test-ovs fix-horizon status stop start
@@ -649,6 +659,123 @@ test_extnet_down_after_iface_change() {
   run_lab ext-net --down
   expect_rc 0 || return 1
   ! grep -q 'lab-ext-net' "${T}/rules" || fail "sobraram regras da interface antiga: $(cat "${T}/rules")"
+}
+
+# ---- modo isolado: VIP na dummy1 (rede so do host), NAT pela rota padrao (spec lab-isolado)
+
+isolado_globals() {
+  write_globals 'network_interface: "dummy1"' 'neutron_external_interface: "dummy0"' \
+    'kolla_internal_vip_address: "10.99.0.250"'
+}
+
+test_isolado_host_net_created() {
+  isolado_globals
+  run_lab dummy0
+  expect_rc 0 || return 1
+  [[ -e "${T}/dummy1" ]] || fail "dummy1 nao criada" || return 1
+  [[ "$(cat "${T}/dummy1_addr")" == "10.99.0.1/24" ]] || fail "dummy1 sem 10.99.0.1/24" || return 1
+  grep -qx 'dummy1 ativa: 10.99.0.1/24 (VIP 10.99.0.250)' "${T}/out" || fail "sem a linha da dummy1" || return 1
+  : >"${T}/log"; rm -f "${T}/dummy1" "${T}/dummy1_addr"
+  run_lab prep
+  [[ -e "${T}/dummy1" && "$(cat "${T}/dummy1_addr")" == "10.99.0.1/24" ]] || fail "prep nao criou a dummy1"
+}
+
+test_isolado_host_net_idempotent() {
+  isolado_globals
+  run_lab dummy0 && run_lab dummy0
+  expect_rc 0 || return 1
+  [[ "$(wc -l <"${T}/dummy1_addr")" -eq 1 ]] || fail "IP duplicado na dummy1: $(cat "${T}/dummy1_addr")" || return 1
+  [[ "$(grep -c '^ip link add dummy1 type dummy' "${T}/log")" -eq 1 ]] || fail "dummy1 criada duas vezes"
+}
+
+test_isolado_physical_nif_untouched() {
+  # globals do sandbox: network_interface enp9s0 (placa fisica)
+  run_lab dummy0
+  expect_rc 0 || return 1
+  [[ ! -e "${T}/dummy1" ]] || fail "criou dummy1 com placa fisica" || return 1
+  if grep -qE 'ip (addr add|link add) .*enp9s0|enp9s0 type' "${T}/log"; then fail "mexeu na placa fisica"; return 1; fi
+}
+
+test_isolado_fix_wired_skips_virtual() {
+  isolado_globals
+  mkdir -p "${T}/sys/dummy1"; touch "${T}/dummy1"   # existe (sysfs e ip), sem device/: virtual
+  run_lab fix-wired
+  expect_rc 0 || return 1
+  grep -q '^pulado: network_interface virtual (dummy1)' "${T}/out" || fail "sem 'pulado:'" || return 1
+  if grep -q '^nmcli' "${T}/log"; then fail "chamou nmcli com interface virtual"; return 1; fi
+}
+
+test_isolado_missing_iface_not_virtual() {
+  # nome que nao existe (erro de digitacao, adaptador USB fora): segue o caminho da placa, com nmcli
+  write_globals 'network_interface: "enx001122"' 'neutron_external_interface: "dummy0"'
+  run_lab fix-wired
+  if grep -q '^pulado: network_interface virtual' "${T}/out"; then fail "tratou interface inexistente como virtual"; return 1; fi
+  grep -q '^nmcli' "${T}/log" || fail "nao tentou o nmcli"
+}
+
+test_isolado_bootstrap_creates_host_net() {
+  isolado_globals
+  local a
+  for a in bootstrap prechecks deploy; do
+    rm -f "${T}/dummy1" "${T}/dummy1_addr"; : >"${T}/log"
+    run_lab "${a}"
+    expect_rc 0 || { fail "${a}"; return 1; }
+    [[ -e "${T}/dummy1" && "$(cat "${T}/dummy1_addr")" == "10.99.0.1/24" ]] || fail "${a} sem a dummy1 antes do Kolla" || return 1
+    local n_dummy n_kolla
+    n_dummy="$(grep -n '^ip link add dummy1' "${T}/log" | head -1 | cut -d: -f1)"
+    n_kolla="$(grep -n '^kolla ' "${T}/log" | head -1 | cut -d: -f1)"
+    [[ -n "${n_kolla}" && "${n_dummy}" -lt "${n_kolla}" ]] || fail "${a}: dummy1 depois do kolla-ansible" || return 1
+  done
+}
+
+test_isolado_fix_wired_missing_dummy() {
+  isolado_globals   # dummy1 ausente (reboot sem start)
+  run_lab fix-wired
+  expect_rc 1 || return 1
+  grep -q '^Erro: dummy1 nao existe (reboot?)' "${T}/err" || fail "sem a dica do start" || return 1
+  if grep -q '^nmcli' "${T}/log"; then fail "chamou nmcli para a dummy1"; return 1; fi
+}
+
+test_isolado_status_shows_host_net() {
+  isolado_globals
+  run_lab status
+  expect_rc 0 || return 1
+  grep -qx '==> dummy1 (gestao: VIP do OpenStack)' "${T}/out" || fail "status sem a dummy1"
+}
+
+test_isolado_ext_net_uses_default_route() {
+  isolado_globals
+  export FAKE_UPLINK=wlp3s0
+  run_lab ext-net
+  expect_rc 0 || return 1
+  grep -qx 'nat POSTROUTING -s 172.24.4.0/24 ! -d 172.24.4.0/24 -o wlp3s0 -m comment --comment lab-ext-net -j MASQUERADE' \
+    "${T}/rules" || fail "MASQUERADE nao saiu pela rota padrao" || return 1
+  grep -q '^filter DOCKER-USER -i br-ex -o wlp3s0 ' "${T}/rules" || fail "FORWARD br-ex -> wlp3s0 ausente" || return 1
+  if grep -q 'dummy1' "${T}/rules"; then fail "regra com a dummy1"; return 1; fi
+}
+
+test_isolado_ext_net_no_route() {
+  isolado_globals
+  export FAKE_NO_ROUTE=1
+  run_lab ext-net
+  expect_rc 1 || return 1
+  grep -q '^Erro: sem rota padrao' "${T}/err" || fail "sem 'Erro: sem rota padrao'" || return 1
+  if grep -q 'lab-ext-net' "${T}/rules" 2>/dev/null; then fail "criou regra sem rota"; return 1; fi
+}
+
+test_isolado_ext_net_uplink_changed() {
+  isolado_globals
+  run_lab ext-net
+  expect_rc 0 || return 1
+  export FAKE_UPLINK=wlp3s0
+  run_lab ext-net
+  expect_rc 0 || return 1
+  if grep -q 'enp9s0' "${T}/rules"; then fail "sobrou regra da placa antiga: $(cat "${T}/rules")"; return 1; fi
+  [[ "$(masq_count)" -eq 1 ]] || fail "MASQUERADE $(masq_count) vezes" || return 1
+  export FAKE_UPLINK=enp9s0
+  run_lab ext-net --down
+  expect_rc 0 || return 1
+  if grep -q 'lab-ext-net' "${T}/rules"; then fail "down nao removeu tudo: $(cat "${T}/rules")"; return 1; fi
 }
 
 test_start_reports_extnet_failure() {
@@ -824,7 +951,9 @@ test_dns_zone_records() {
   done
   grep -qE '^cloud\s+IN\s+A\s+\{\{ cloud_vip \}\}' "${z}" || fail "cloud nao usa o VIP" || return 1
   grep -qE '^db\s+IN\s+A\s+\{\{ private_ips.db \}\}' "${z}" || fail "db nao usa IP privado" || return 1
-  grep -q '^cloud_vip: 192.168.1.250$' "${PROJECT_DIR}/ansible/group_vars/all/main.yml" || fail "VIP errado"
+  local vip
+  vip="$(sed -n 's/^kolla_internal_vip_address: "\(.*\)"/\1/p' "${PROJECT_DIR}/kolla-config/globals.yml")"
+  grep -qx "cloud_vip: ${vip}" "${PROJECT_DIR}/ansible/group_vars/all/main.yml" || fail "cloud_vip diferente do VIP do globals (${vip})"
 }
 
 test_dns_coringa() {
@@ -4072,7 +4201,8 @@ test_cloud_https_cloud_check() {
   local f="${PROJECT_DIR}/tests/cloud-checks.sh" corpo
   corpo="$(sed -n '/^check_https_cloud()/,/^}/p' "${f}")"
   grep -qF -- '--cacert "${PKI}/ca.crt"' <<<"${corpo}" || fail "sem --cacert" || return 1
-  grep -qF -- '--resolve "cloud.${DOMAIN}:443:192.168.1.250"' <<<"${corpo}" || fail "sem --resolve" || return 1
+  grep -qF -- '--resolve "cloud.${DOMAIN}:443:${VIP}"' <<<"${corpo}" || fail "sem --resolve" || return 1
+  grep -qE '^VIP=.*kolla_internal_vip_address.*globals\.yml' "${f}" || fail "VIP nao vem do globals.yml" || return 1
   grep -qF '/auth/login/' <<<"${corpo}" || fail "sem /auth/login/" || return 1
   if grep -E '^ALL=' "${f}" | grep -qw https_cloud; then fail "https_cloud na lista padrao" || return 1; fi
 }

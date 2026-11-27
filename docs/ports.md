@@ -3,9 +3,10 @@
 Mapa das portas esperadas neste lab. Fonte: defaults do Kolla-Ansible
 (`group_vars/all` no venv) alinhados a [`kolla-config/globals.yml`](../kolla-config/globals.yml).
 
-- VIP / Horizon: `http://192.168.1.250` (porta 80 via HAProxy) e `https://cloud.larcerto.com.br` (443, `./larcerto.sh cert cloud`)
-- `network_interface`: `enp9s0` (cabo — gerenciamento; internet do host permanece)
-- `neutron_external_interface`: `dummy0` (não usa o cabo)
+- VIP / Horizon: `http://10.99.0.250` (porta 80 via HAProxy) e `https://cloud.larcerto.com.br` (443, `./larcerto.sh cert cloud`)
+- `network_interface`: `dummy1` (rede só do host `10.99.0.0/24`; nenhuma placa real; o VIP fica nela)
+- `neutron_external_interface`: `dummy0` (não usa placa real)
+- As portas abaixo escutam no VIP `10.99.0.250`: alcançáveis do host e das VMs, não da LAN
 
 Após o primeiro `deploy`, confira com `docker ps` e `ss -tlnp` e ajuste este arquivo se algo divergir.
 

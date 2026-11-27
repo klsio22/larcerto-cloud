@@ -22,7 +22,7 @@ cmd_fix_horizon() {
 
 
 cmd_prep() {
-  step "prep: dummy0 + OVS do host fora do caminho"
+  step "prep: dummy0 + rede do host + OVS do host fora do caminho"
   cmd_dummy0
   cmd_fix_ovs
   echo
@@ -51,7 +51,7 @@ cmd_status() {
     echo "    ausente — ./larcerto.sh dummy0"
   fi
 
-  step "${nif} (cabo / gestao)"
+  step "${nif} (gestao: VIP do OpenStack)"
   if ip link show "${nif}" >/dev/null 2>&1; then
     ip -br addr show "${nif}" | sed 's/^/    /'
   else
@@ -149,7 +149,7 @@ cmd_start() {
     exit 1
   fi
 
-  step "dummy0 (some no reboot; Neutron precisa dela)"
+  step "dummy0 e rede do host (somem no reboot; Neutron e o VIP precisam delas)"
   cmd_dummy0
 
   local kolla_services=()

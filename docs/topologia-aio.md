@@ -7,9 +7,10 @@ completo (router, redes e floating IPs) está em [`../docs/nuvem-larcerto.md`](n
 
 ```
 Host (Zorin) — cliente: Firefox/Brave e terminal (SSH)
-├─ enp9s0 ………… gerenciamento + internet (IP do host; VIP 192.168.1.250)
-├─ dummy0 ……… neutron_external_interface (não toca no cabo)
-├─ br-ex ………… 172.24.4.1/24 + NAT (larcerto.sh ext-net): host alcança os floating IPs
+├─ cabo ou Wi-Fi … só internet do host e saída (NAT) das VMs; o lab não mexe nelas
+├─ dummy1 ……… network_interface: rede só do host 10.99.0.1/24, VIP 10.99.0.250
+├─ dummy0 ……… neutron_external_interface (não toca placa real)
+├─ br-ex ………… 172.24.4.1/24 + NAT pela rota padrão (larcerto.sh ext-net): host alcança os floating IPs
 └─ Kolla AIO (containers)
      ├─ Horizon / APIs (HAProxy no VIP; https://cloud.larcerto.com.br) ← REQ12
      └─ Projeto OpenStack larcerto, usuário devops1                  ← REQ13
@@ -26,15 +27,19 @@ CA num servidor separado, fora do OpenStack; aqui eles ficam como VMs do projeto
 
 Portas: ver [`ports.md`](ports.md).
 
-## Por que enp9s0 + dummy0
+## Por que dummy1 + dummy0 (modo isolado)
 
 | Variável Kolla | Valor | Efeito |
 |----------------|-------|--------|
-| `network_interface` | `enp9s0` | APIs/VIP na LAN; cabo e internet do host **continuam** |
+| `network_interface` | `dummy1` | APIs/VIP numa rede só do host; cabo e Wi-Fi **não são tocados** |
 | `neutron_external_interface` | `dummy0` | Neutron não assume a NIC física |
-| `kolla_internal_vip_address` | `192.168.1.250` | Endpoint Horizon/APIs (confirmar IP livre na LAN) |
+| `kolla_internal_vip_address` | `10.99.0.250` | Endpoint Horizon/APIs; o host fica com `10.99.0.1/24` na `dummy1` |
 
-Colocar o cabo em `neutron_external_interface` (ou no `br-ex` do OVS) derruba a rede. Este lab usa só `dummy0` na externa. O fluxo normal (`larcerto.sh deploy` / `all` / `post-deploy`) corre `fix-wired` no fim; se a cabo ainda ficar sem IPv4, corre `./larcerto.sh fix-wired` de novo.
+Antes (até 26/11/2026) o VIP ficava no cabo (`enp9s0`, `192.168.1.250`): outra máquina tinha de trocar a
+placa e o IP, e um notebook só com Wi-Fi teria o VIP anunciado na rede sem fio. Agora nenhuma placa real
+recebe IP do lab; as VMs saem para a internet pelo NAT do `ext-net`, pela placa da rota padrão (cabo ou
+Wi-Fi). Colocar uma placa real em `neutron_external_interface` (ou no `br-ex` do OVS) continua derrubando a
+rede: a externa é sempre a `dummy0`. O `fix-wired` só age se `network_interface` for uma placa física.
 
 ## Aula → passo
 
@@ -48,8 +53,8 @@ Colocar o cabo em `neutron_external_interface` (ou no `br-ex` do OVS) derruba a 
 ## Checklist pré-deploy (aluno)
 
 1. Venv Kolla pronto (`./larcerto.sh venv`: cria `~/venvs/kolla` e roda `kolla-ansible install-deps`).
-2. Conferir VIP livre: `ping -c1 192.168.1.250` (não deve responder se estiver livre).
-3. Revisar [`../kolla-config/globals.yml`](../kolla-config/globals.yml): `enp9s0`, `dummy0`, VIP.
+2. Conferir a faixa do VIP livre no host: `ip route | grep '10\.99\.0\.'` vazio antes do primeiro `prep` (VPN ou rede da faculdade na mesma faixa colidiria; depois do `prep` aparece a `dummy1`).
+3. Revisar [`../kolla-config/globals.yml`](../kolla-config/globals.yml): `dummy1`, `dummy0`, VIP.
 4. Máquina nova: `./larcerto.sh bootstrap` (uma vez).
 5. Subir tudo: `./larcerto.sh all` (prep → Kolla → projeto → Terraform → Ansible → HTTPS do Horizon;
    continuar de uma etapa com `--from <etapa>`). O passo `prereqs` avisa se falta o cliente

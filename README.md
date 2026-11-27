@@ -15,7 +15,7 @@ Passo a passo da nuvem do trabalho (rede externa, projeto, VMs, DNS, CA, HTTPS):
 | Horizon como admin | https://cloud.larcerto.com.br | `admin`; senha `keystone_admin_password` em `kolla-config/passwords.yml` |
 
 Os nomes resolvem pela VM `dns` (`./larcerto.sh dns-host`, feito pelo `all` e pelo `start-app`) e o cadeado
-depende da CA LarCerto no navegador (`./larcerto.sh cert trust`). O IP do VIP, `http://192.168.1.250`, só
+depende da CA LarCerto no navegador (`./larcerto.sh cert trust`). O IP do VIP, `http://10.99.0.250`, só
 serve antes disso: logo depois do `deploy`, quando ainda não existem as VMs `dns` e `ca`.
 
 Senhas, CLI do OpenStack (admin e `devops1`), estado do lab e SSH nas VMs:
@@ -93,11 +93,18 @@ cp ~/venvs/kolla/share/kolla-ansible/etc_examples/kolla/passwords.yml kolla-conf
 
 ## Rede deste lab (não fica sem internet)
 
+O lab não usa nenhuma placa de rede real: o OpenStack fala só por interfaces virtuais do próprio host.
+O cabo e o Wi-Fi ficam como estão (IP do DHCP, DNS, conexão do NetworkManager); servem só de saída
+para a internet das VMs, pela rota padrão do host, como no NAT do VirtualBox.
+
 | Variável | Valor | Papel |
 |----------|-------|--------|
-| `network_interface` | `enp9s0` | Cabo Ethernet — gerenciamento/VIP; IP do host permanece |
-| `neutron_external_interface` | `dummy0` | Externa do Neutron (falsa; não toma o cabo) |
-| `kolla_internal_vip_address` | `192.168.1.250` | Horizon/APIs (confirmar IP livre na LAN) |
+| `network_interface` | `dummy1` | Rede só do host `10.99.0.0/24` (host `10.99.0.1`); o VIP fica nela. Criada pelo `prep`/`start` (e pelo `bootstrap`/`deploy`, se faltar) |
+| `neutron_external_interface` | `dummy0` | Externa do Neutron (falsa; não toma placa nenhuma) |
+| `kolla_internal_vip_address` | `10.99.0.250` | Horizon/APIs, alcançáveis do host e das VMs (não da LAN) |
+
+O NAT das VMs (`./larcerto.sh ext-net`) sai pela placa da rota padrão (`ip route get 1.1.1.1`): cabo ou
+Wi-Fi, o que tiver internet. Trocou de rede? Rode `./larcerto.sh ext-net` de novo.
 
 Detalhes: [`docs/topologia-aio.md`](docs/topologia-aio.md).
 
@@ -115,18 +122,17 @@ as 4 VMs da app (`dns`, `ca`, `web`, `db`, flavor `ds1G`: 1 vCPU, 1 GB de RAM e 
 | RAM | 12 GB | 16 GB ou mais | ~8 GB para o OpenStack (quickstart do Kolla) + 4 GB das 4 VMs |
 | CPU | 4 núcleos, com virtualização (VT-x/AMD-V) ligada na BIOS | 8 núcleos ou mais | 4 VMs de 1 vCPU mais os containers do Kolla; sem virtualização, as VMs não sobem em velocidade usável |
 | Disco livre | 60 GB | 80 GB ou mais (SSD) | imagens do Kolla (~11 GB), 4 discos de 10 GB, imagem do Ubuntu, venv e Docker |
-| Rede | 1 placa com cabo, com internet | a mesma | a interface externa do Neutron é a `dummy0`, criada pelo `./larcerto.sh prep`; não precisa de segunda placa |
-| LAN | um IP livre na rede do cabo, para o VIP do OpenStack | — | `ping -c1 192.168.1.250` sem resposta = livre |
+| Rede | 1 placa com internet: cabo **ou** Wi-Fi | cabo (mais estável para baixar as imagens) | o lab não põe IP em placa real: usa `dummy0` e `dummy1`, criadas pelo `./larcerto.sh prep`; a placa só leva a internet das VMs |
+| Faixa `10.99.0.0/24` | sem uso no host (antes do 1º `prep`, `ip route \| grep '10\.99\.0\.'` vazio; depois só a `dummy1`) | — | é a rede só do host com o VIP; colide se a rede da faculdade ou uma VPN usar a mesma faixa |
 | Acesso | `sudo` e Docker | usuário no grupo `docker` | com o grupo `docker`, `bootstrap`/`deploy` não pedem senha |
 
 RAM, CPU e disco são estimativas a partir do que o lab cria (quickstart do Kolla + flavor das VMs), não
 medições. Para conferir na sua máquina com tudo no ar (depois do `./larcerto.sh all`): `free -h` e `df -h /`.
 
-**Em outra máquina, ajuste antes do primeiro `deploy`** o [`kolla-config/globals.yml`](kolla-config/globals.yml),
-que está com os valores deste host:
-
-- `network_interface: "enp9s0"`: troque pelo nome da sua placa com cabo (`ip -br link`).
-- `kolla_internal_vip_address: "192.168.1.250"`: troque por um IP livre da sua rede, fora do DHCP do roteador.
+Em outra máquina não há nada a ajustar no [`kolla-config/globals.yml`](kolla-config/globals.yml): a rede do
+OpenStack é virtual (`dummy1`, `10.99.0.0/24`) e não depende do nome da placa nem da LAN. Só se a faixa
+`10.99.0.0/24` já estiver em uso (VPN, rede da faculdade), troque `kolla_internal_vip_address` no `globals.yml`
+e `cloud_vip` em `ansible/group_vars/all/main.yml` pelo mesmo IP de outra faixa `/24`, antes do primeiro `deploy`.
 
 ### Software
 
@@ -209,12 +215,12 @@ source ~/venvs/kolla/bin/activate
 ### 2) Prep + deploy
 
 ```bash
-ping -c1 192.168.1.250          # sem resposta = VIP livre
+ip route | grep '10\.99\.0\.'   # antes do 1º prep: vazio = faixa do VIP livre (depois aparece a dummy1)
 ./larcerto.sh prep           # dummy0 + OVS do host fora do caminho
 ./larcerto.sh bootstrap
 ./larcerto.sh prechecks
-./larcerto.sh deploy         # demora; no fim aplica fix-wired (cabo fora do br-ex)
-./larcerto.sh post-deploy    # tambem garante fix-wired
+./larcerto.sh deploy         # demora; no fim aplica fix-wired e ext-net
+./larcerto.sh post-deploy    # tambem aplica fix-wired e ext-net
 ```
 
 Atalho para subir o projeto inteiro de uma vez (OpenStack, nuvem, app e HTTPS do Horizon), sem apagar nada. Se uma etapa falhar, ele mostra como continuar com `./larcerto.sh all --from <etapa>`:
@@ -241,7 +247,7 @@ causa do HSTS da app, nem oferece a opção de continuar. Para ver a CA e os cer
 
 ### 3) Testar
 
-1. Browser: **https://larcerto.com.br** (app) e **https://cloud.larcerto.com.br** (Horizon); logins na seção [Endereços](#endereços-nuvem-e-app-no-ar). Só com o Kolla no ar (sem as VMs `dns` e `ca`): `http://192.168.1.250`
+1. Browser: **https://larcerto.com.br** (app) e **https://cloud.larcerto.com.br** (Horizon); logins na seção [Endereços](#endereços-nuvem-e-app-no-ar). Só com o Kolla no ar (sem as VMs `dns` e `ca`): `http://10.99.0.250`
 2. Estado rápido: `./larcerto.sh status` (Kolla); VMs da nuvem: `./larcerto.sh vms`; apagar e recriar a infra da app (REQ25): `./larcerto.sh recreate-app`
 3. OVS só: `./larcerto.sh test-ovs`
 4. Portas: [`docs/ports.md`](docs/ports.md)
@@ -288,9 +294,10 @@ devolver o PC ao estado de antes.
 | Mudança | Quem faz | Depois do reboot | Desfazer à mão |
 |---------|----------|------------------|----------------|
 | Interface `dummy0` (rede externa falsa do Neutron, para não tomar o cabo) | `prep`, `start` | some; o `start` e o `all` recriam | `sudo ip link delete dummy0` |
+| Interface `dummy1` com `10.99.0.1/24` (rede só do host, onde fica o VIP) | `prep`, `start` | some; o `start` e o `all` recriam | `sudo ip link delete dummy1` |
 | `openvswitch-switch` do Ubuntu parado e desabilitado (brigaria com o OVS do Kolla) | `prep` (`fix-ovs`) | continua desabilitado | `sudo systemctl enable --now openvswitch-switch` |
 | libvirt do Ubuntu parado (brigaria com o `nova_libvirt`; as VMs nasceriam em `ERROR`) | `start`, `deploy`, `all`, `recreate-app` | volta sozinho; o `larcerto.sh` para de novo | nada: ele já volta no reboot |
-| VIP `192.168.1.250` no cabo, containers e volumes do Kolla, unidades `kolla-*`, `/etc/kolla/<serviço>` | `deploy` | voltam (padrão do Kolla), salvo depois de `stop` | `./larcerto.sh clear-all` |
+| VIP `10.99.0.250` na `dummy1`, containers e volumes do Kolla, unidades `kolla-*`, `/etc/kolla/<serviço>` | `deploy` | voltam (padrão do Kolla), salvo depois de `stop` | `./larcerto.sh clear-all` |
 | IP `172.24.4.1/24` na `br-ex`, regras `lab-ext-net` no iptables, `net.ipv4.ip_forward=1` | `ext-net` (no fim do `deploy` e do `start`) | IP e regras somem; o `start` refaz | `./larcerto.sh ext-net --down` (o `ip_forward` fica: o Docker usa) |
 | DNS do host: `*.larcerto.com.br` vai para a VM `dns` (`resolvectl` na `br-ex`) | `dns-host` | some | `./larcerto.sh dns-host --down` |
 | CA LarCerto nos navegadores (Firefox, Brave, Chromium) | `cert trust` | fica | `./larcerto.sh clear-all`, ou remova a "CA LarCerto" nas configurações do navegador |
@@ -304,6 +311,7 @@ Devolver o PC ao normal, nesta ordem (só o que você quiser; nada disso é prec
 ./larcerto.sh clear-all --yes                     # VMs, OpenStack, app local, CA e arquivos gerados
 
 sudo ip link delete dummy0
+sudo ip link delete dummy1
 sudo systemctl enable --now openvswitch-switch   # só se você usa o OVS do Ubuntu para outra coisa
 sudo rm -f /etc/systemd/system/kolla.target && sudo systemctl daemon-reload
 sudo rm -rf /etc/kolla
@@ -325,7 +333,8 @@ sudo ufw enable                               # se você usava o firewall do Ubu
 |---------|---------|
 | `openvswitch_db` / `pidfile check failed` | `./larcerto.sh fix-ovs` → `./larcerto.sh deploy` |
 | Confirmar OVS sem redeploy longo | `./larcerto.sh test-ovs` |
-| Cabo sem IP / “getting IP configuration” | Já corre no fim de `deploy`/`all`/`post-deploy`; se voltar: `./larcerto.sh fix-wired` |
+| Cabo sem IP / “getting IP configuration” | Só acontece com `network_interface` numa placa física (fora do padrão); já corre no fim de `deploy`/`all`/`post-deploy`; se voltar: `./larcerto.sh fix-wired` |
+| VMs sem internet depois de trocar de rede (cabo ↔ Wi-Fi) | `./larcerto.sh ext-net` (o NAT segue a nova rota padrão) |
 | Deploy falha em horizon `409 Conflict` (nome já em uso) | `./larcerto.sh fix-horizon` → `./larcerto.sh deploy` |
 | Horizon já abre no browser | Ignora o 409; usa o login |
 | Navegador não confia no HTTPS da LarCerto (Firefox: *Warning: Security Risk* / HSTS em `larcerto.com.br`), ou o certificado venceu / o `web` serve outro | `./larcerto.sh cert` (ver); `./larcerto.sh cert trust` (confiar na CA); `./larcerto.sh cert renew` (emitir de novo) |

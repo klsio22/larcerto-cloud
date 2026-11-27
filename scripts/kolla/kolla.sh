@@ -216,6 +216,11 @@ kolla_run() {
 
 cmd_kolla() {
   local action="$1"
+  # network_interface dummy* (modo isolado): o bootstrap grava o IP dela no /etc/hosts e o
+  # prechecks/deploy poem o VIP nela, entao ela precisa existir antes (maquina nova sem prep).
+  case "${action}" in
+    bootstrap|prechecks|deploy) host_net_up ;;
+  esac
   # Com set -e, uma falha em kolla_run encerra o larcerto.sh com o mesmo codigo do kolla-ansible.
   kolla_run "${action}"
   # Padrao do lab AIO: apos subir a nuvem, NIC de gestao fora do br-ex.

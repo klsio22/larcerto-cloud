@@ -11,7 +11,7 @@ Código: [`../larcerto.sh`](../larcerto.sh). O `larcerto.sh` só carrega os mód
 | Módulo | Origem | Conteúdo |
 |--------|--------|----------|
 | [`scripts/common.sh`](../scripts/common.sh) | compartilhado | `step`, `run_as_root`, `docker_cmd`, `read_globals` |
-| [`scripts/lab/rede.sh`](../scripts/lab/rede.sh) | `larcerto.sh` | `dummy0`, `fix-wired`, `ext-net`, `dns-host` |
+| [`scripts/lab/rede.sh`](../scripts/lab/rede.sh) | `larcerto.sh` | `dummy0` (e `dummy1`, a rede do host), `fix-wired`, `ext-net`, `dns-host` |
 | [`scripts/lab/ovs.sh`](../scripts/lab/ovs.sh) | `larcerto.sh` | `fix-ovs`, `test-ovs` e leitura das portas da `br-ex` |
 | [`scripts/lab/ciclo.sh`](../scripts/lab/ciclo.sh) | `larcerto.sh` | `prep`, `status`, `start`, `stop`, `fix-horizon` |
 | [`scripts/lab/install.sh`](../scripts/lab/install.sh) | `larcerto.sh` | `all` (15 etapas, `--from`), `install-app` (8 etapas, `--from`), `start-app` (religa a instalação), `recreate-app` (apaga e recria a infra da app) |
@@ -62,9 +62,13 @@ Lista unidades systemd `kolla-*.service` via `systemctl list-unit-files` (visív
 
 Leem `globals.yml` via `read_globals`:
 
-- `network_iface` — `network_interface` (default `enp9s0`).
+- `network_iface` — `network_interface` (default `dummy1`).
+- `is_virtual_iface` — interface sem placa por trás (sem `/sys/class/net/<if>/device`; `SYS_CLASS_NET` troca a pasta nos testes).
+- `host_net_cidr` — IP do host na rede do VIP: `<3 primeiros octetos do VIP>.1/24` (`10.99.0.1/24`).
+- `host_net_up` — com `network_interface` `dummy*`: cria a interface, põe `host_net_cidr` (sem duplicar) e sobe; placa física: nada. Chamado pelo `dummy0`, `prep` e `start`, e antes do kolla-ansible no `bootstrap`, `prechecks` e `deploy` (máquina nova sem `prep`).
+- `uplink_iface` — placa da rota padrão (`ip route get 1.1.1.1`): saída do NAT das VMs.
 - `external_iface` — `neutron_external_interface` (default `dummy0`).
-- `vip_address` — `kolla_internal_vip_address` (default `192.168.1.250`).
+- `vip_address` — `kolla_internal_vip_address` (default `10.99.0.250`).
 
 ### `ovs_db_running` / `br_ex_ports` / `mgmt_on_br_ex`
 
@@ -95,13 +99,13 @@ Chama `kolla_run <ação>` de [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.
 | `prep` | `cmd_prep` | `dummy0` + `fix-ovs`; imprime próximo fluxo |
 | `dummy0` | `cmd_dummy0` | Cria/ativa a interface externa (`dummy0` ou valor de `globals.yml`) |
 | `fix-ovs` | `cmd_fix_ovs` | Para OVS do host, limpa `/run/openvswitch`, remove containers OVS Kolla |
-| `fix-wired` | `cmd_fix_wired` | Tira `network_interface` de `br-ex` e reativa o cabo no NetworkManager |
+| `fix-wired` | `cmd_fix_wired` | Tira `network_interface` de `br-ex` e, se ela for placa física, reativa a conexão no NetworkManager; virtual (`dummy1`, padrão): `pulado:` |
 | `test-ovs` | `cmd_test_ovs` | Healthcheck rápido OVS (host, containers, `ovs-vsctl`, alerta cabo em `br-ex`) |
 | `fix-horizon` | `cmd_fix_horizon` | Remove container `horizon` (resolve 409 Conflict no recreate) |
 | `status` | `cmd_status` | Estado: interfaces, OVS, Horizon, HTTP no VIP |
 | `stop` | `cmd_stop` | Para `kolla-*`, desabilita autostart no boot e para containers |
-| `start` | `cmd_start` | Sobe o lab já deployado: `dummy0` + `kolla-*` + `ext-net` + `fix-wired` |
-| `ext-net` | `cmd_ext_net` | IP `172.24.4.1/24` na `br-ex` + NAT/FORWARD: floating IPs alcançáveis do host (`--down` desfaz) |
+| `start` | `cmd_start` | Sobe o lab já deployado: `dummy0` e `dummy1` + `kolla-*` + `ext-net` + `fix-wired` |
+| `ext-net` | `cmd_ext_net` | IP `172.24.4.1/24` na `br-ex` + NAT/FORWARD pela placa da rota padrão (`ip route get 1.1.1.1`, cabo ou Wi-Fi): floating IPs alcançáveis do host e VMs com internet. Rodar de novo depois de trocar de rede tira as regras da placa antiga. Sem rota padrão: `Erro: sem rota padrao`, sai 1. `--down` desfaz |
 | `dns-host` | `cmd_dns_host` | Split DNS do host: só `~larcerto.com.br` na `br-ex` vai para a VM `dns` (`--down` desfaz) |
 | `install-app` | `install_app` (`scripts/lab/install.sh`) | Confere os pré-requisitos (instala o Terraform se faltar) e sobe nuvem + app em 8 etapas (`--from <etapa>` continua de uma etapa); para na que falhar e mostra como continuar |
 | `start-app` | `start_app` (`scripts/lab/install.sh`) | Religa uma instalação existente: `start`, VMs `SHUTOFF`, `dns-host` e `checks`; sem `bootstrap`, Terraform ou Ansible |
@@ -143,8 +147,9 @@ Usar antes do 1.º deploy ou após conflito com OVS do host.
 
 1. Valida que `network_interface` ≠ `neutron_external_interface`
 2. Se `openvswitch_db` estiver Up e a NIC de gestão estiver em `br-ex`: `ovs-vsctl del-port br-ex <nic>`
-3. Ativa a ligação NetworkManager (`nmcli connection up` ou `nmcli device connect`)
-4. Falha (exit 1) se a NIC ficar sem IPv4, se as duas interfaces forem iguais ou se não houver `nmcli`
+3. `network_interface` virtual (padrão `dummy1`): imprime `pulado: network_interface virtual (<if>)` e sai 0, sem `nmcli`
+4. Placa física: ativa a ligação NetworkManager (`nmcli connection up` ou `nmcli device connect`)
+5. Falha (exit 1) se a NIC física ficar sem IPv4, se as duas interfaces forem iguais ou se não houver `nmcli`
 
 Também corre automaticamente no fim de `deploy` / `all` / `post-deploy` / `start`.
 
@@ -173,7 +178,7 @@ Imprime:
 - `openvswitch-switch` no host
 - Containers OVS e Horizon
 - Aviso se gestão estiver em `br-ex`
-- HTTP no VIP Horizon (`http://<kolla_internal_vip_address>/auth/login/`, default `192.168.1.250`)
+- HTTP no VIP Horizon (`http://<kolla_internal_vip_address>/auth/login/`, default `10.99.0.250`)
 
 #### `cmd_stop` (`stop`)
 
@@ -195,8 +200,9 @@ Equivalente automatizado do que o professor refaz à mão no DevStack após rebo
 1. Espera a `br-ex` existir (até `EXT_NET_WAIT`, padrão 30 s)
 2. `ip addr add 172.24.4.1/24 dev br-ex` (se ainda não tiver) e `ip link set br-ex up`
 3. `net.ipv4.ip_forward=1` (se estiver 0)
-4. Regras com comentário `lab-ext-net`: `MASQUERADE` de `172.24.4.0/24` saindo pelo `network_interface`, e `ACCEPT` de/para a `br-ex` na posição 1 da chain `DOCKER-USER` (se o Docker gerir o iptables) ou do `FORWARD`. Neste host o Docker roda com `"iptables": false` e é o **UFW** que deixa o `FORWARD` em `DROP`; depois de um `ufw reload`, se as regras sumirem rode `ext-net`; se ficarem atrás das do UFW rode `ext-net --down` e `ext-net` (o `-C` acha a regra existente e não a recoloca na posição 1)
-5. Idempotente: cada regra só é inserida se `iptables -C` não a encontrar
+4. Regras com comentário `lab-ext-net`: `MASQUERADE` de `172.24.4.0/24` saindo pela placa da rota padrão (`ip route get 1.1.1.1`: cabo ou Wi-Fi; nunca a `dummy1`), e `ACCEPT` de/para a `br-ex` na posição 1 da chain `DOCKER-USER` (se o Docker gerir o iptables) ou do `FORWARD`. Neste host o Docker roda com `"iptables": false` e é o **UFW** que deixa o `FORWARD` em `DROP`; depois de um `ufw reload`, se as regras sumirem rode `ext-net`; se ficarem atrás das do UFW rode `ext-net --down` e `ext-net` (o `-C` acha a regra existente e não a recoloca na posição 1)
+5. Idempotente: cada regra só é inserida se `iptables -C` não a encontrar; antes, tira as regras `lab-ext-net` que citam outra placa (a rota padrão mudou, cabo ↔ Wi-Fi)
+6. Sem rota padrão: `Erro: sem rota padrao`, sai 1, antes de mexer na `br-ex`
 
 `ext-net --down` remove pelo comentário todas as regras `lab-ext-net` (mesmo se a interface mudou) e o IP. Não desfaz `ip_forward`, de que o Docker também depende. Nada disso persiste no reboot; o `start` reaplica. Uma falha em qualquer comando faz o `ext-net` retornar 1 e o `start`/`deploy` mostrar `AVISO`.
 

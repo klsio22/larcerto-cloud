@@ -1,10 +1,11 @@
-# Rede do lab: dummy0, br-ex (fix-wired), ext-net (NAT das floating IPs) e split DNS do host.
+# Rede do lab: dummy0 (Neutron), dummy1 (rede so do host, com o VIP), br-ex (fix-wired),
+# ext-net (NAT das floating IPs pela rota padrao) e split DNS do host. Nenhuma placa real recebe IP.
 # Carregado pelo larcerto.sh; so define funcoes e variaveis.
 # shellcheck shell=bash
 
 
 network_iface() {
-  read_globals network_interface enp9s0
+  read_globals network_interface dummy1
 }
 
 
@@ -14,11 +15,51 @@ external_iface() {
 
 
 vip_address() {
-  read_globals kolla_internal_vip_address 192.168.1.250
+  read_globals kolla_internal_vip_address 10.99.0.250
 }
 
-# wait_vip: espera o Keystone responder no VIP. Ao reativar o cabo, o NetworkManager tira o VIP e o
-# keepalived so o devolve alguns segundos depois; sem esperar, o Terraform logo em seguida falha
+# Interface sem placa por tras (dummy, bridge, veth) nao tem /sys/class/net/<if>/device.
+SYS_CLASS_NET="${SYS_CLASS_NET:-/sys/class/net}"
+# Nome que nao existe nao conta como virtual: o fix-wired segue o caminho da placa e falha com aviso.
+is_virtual_iface() {
+  [[ -e "${SYS_CLASS_NET}/$1" && ! -e "${SYS_CLASS_NET}/$1/device" ]]
+}
+
+# IP do host na rede do VIP: <tres primeiros octetos do VIP>.1/24 (VIP 10.99.0.250 -> 10.99.0.1/24).
+host_net_cidr() {
+  local vip
+  vip="$(vip_address)"
+  echo "${vip%.*}.1/24"
+}
+
+# Placa da rota padrao do host (cabo ou Wi-Fi): por onde as VMs saem para a internet.
+uplink_iface() {
+  # sem rota, o ip sai != 0: com pipefail derrubaria o larcerto.sh antes da mensagem de erro
+  { ip route get 1.1.1.1 2>/dev/null || true; } | awk '{ for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }'
+}
+
+# network_interface dummy*: cria a interface e da o IP do host na rede do VIP (o keepalived
+# poe o VIP nela). Some no reboot, como a dummy0; prep e start a recriam. Placa fisica: nada.
+host_net_up() {
+  local nif cidr
+  nif="$(network_iface)"
+  [[ "${nif}" == dummy* ]] || return 0
+  cidr="$(host_net_cidr)"
+  if ! ip link show "${nif}" >/dev/null 2>&1; then
+    run_as_root ip link add "${nif}" type dummy
+    echo "${nif} criada (rede so do host)."
+  fi
+  if ! ip -4 -o addr show "${nif}" 2>/dev/null | grep -q "inet ${cidr} "; then
+    run_as_root ip addr add "${cidr}" dev "${nif}"
+  fi
+  if ! ip -br link show "${nif}" 2>/dev/null | grep -q 'UP'; then
+    run_as_root ip link set "${nif}" up
+  fi
+  echo "${nif} ativa: ${cidr} (VIP $(vip_address))"
+}
+
+# wait_vip: espera o Keystone responder no VIP. Depois de subir containers (ou, com network_interface
+# fisica, de reativar a placa) o keepalived so devolve o VIP alguns segundos depois; sem esperar, o Terraform logo em seguida falha
 # com "no route to host". VIP_WAIT = segundos (padrao 90).
 wait_vip() {
   local vip t0="${SECONDS}"
@@ -49,12 +90,11 @@ cmd_dummy0() {
     echo "${ext} criada."
   fi
   # Evita sudo/Docker se ja estiver UP
-  if ip -br link show "${ext}" 2>/dev/null | grep -q 'UP'; then
-    echo "${ext} esta ativa."
-    return 0
+  if ! ip -br link show "${ext}" 2>/dev/null | grep -q 'UP'; then
+    run_as_root ip link set "${ext}" up
   fi
-  run_as_root ip link set "${ext}" up
   echo "${ext} esta ativa."
+  host_net_up
 }
 
 
@@ -82,6 +122,17 @@ cmd_fix_wired() {
     print_br_ex_ports
   else
     step "openvswitch_db nao esta Up — so a restaurar NetworkManager"
+  fi
+
+  # dummy* que sumiu (reboot sem start): nao e placa, o nmcli nao resolve.
+  if [[ "${nif}" == dummy* ]] && ! ip link show "${nif}" >/dev/null 2>&1; then
+    echo "Erro: ${nif} nao existe (reboot?). Recrie com ./larcerto.sh start (ou ./larcerto.sh dummy0)" >&2
+    return 1
+  fi
+  # VIP numa interface virtual: nenhuma placa real (cabo ou Wi-Fi) e reconectada.
+  if is_virtual_iface "${nif}"; then
+    echo "pulado: network_interface virtual (${nif}); nenhuma placa real a reconectar"
+    return 0
   fi
 
   if ! command -v nmcli >/dev/null 2>&1; then
@@ -148,7 +199,6 @@ cmd_ext_net() {
   esac
 
   local nif chain i
-  nif="$(network_iface)"
   for ((i = 0; i < EXT_NET_WAIT; i++)); do
     ip link show br-ex >/dev/null 2>&1 && break
     sleep 1
@@ -181,7 +231,12 @@ cmd_ext_net() {
     return 0
   fi
 
-  step "ext-net: br-ex com ${EXT_NET_GW} e NAT de ${EXT_NET_CIDR} via ${nif}"
+  nif="$(uplink_iface)"
+  if [[ -z "${nif}" ]]; then
+    echo "Erro: sem rota padrao (host sem internet?); as VMs nao teriam saida. Conecte o cabo ou o Wi-Fi e rode ./larcerto.sh ext-net" >&2
+    return 1
+  fi
+  step "ext-net: br-ex com ${EXT_NET_GW} e NAT de ${EXT_NET_CIDR} via ${nif} (rota padrao)"
   if ! ip -4 -o addr show br-ex 2>/dev/null | grep -q "inet ${EXT_NET_GW} "; then
     run_as_root ip addr add "${EXT_NET_GW}" dev br-ex || return 1
   fi
@@ -189,6 +244,16 @@ cmd_ext_net() {
   if [[ "$(cat "${IP_FORWARD_FILE}" 2>/dev/null)" != "1" ]]; then
     run_as_root sysctl -w net.ipv4.ip_forward=1 >/dev/null || return 1
   fi
+  # A rota padrao mudou (cabo <-> Wi-Fi): tira as regras do ext-net que citam a placa antiga.
+  local current
+  for table in nat filter; do
+    current="$(run_as_root iptables -t "${table}" -S)" || return 1
+    while read -r line; do
+      [[ -n "${line}" && " ${line} " != *" ${nif} "* ]] || continue
+      # shellcheck disable=SC2086
+      run_as_root iptables -t "${table}" ${line/#-A /-D } || return 1
+    done < <(grep -- "--comment ${EXT_NET_TAG}" <<<"${current}")
+  done
   while read -r table ch rule; do
     # shellcheck disable=SC2086
     if ! run_as_root iptables -t "${table}" -C "${ch}" ${rule} 2>/dev/null; then

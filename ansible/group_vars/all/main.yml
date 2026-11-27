@@ -2,8 +2,8 @@
 company_name: LarCerto
 domain: larcerto.com.br
 
-# Horizon (VIP do Kolla) - REQ12: cloud.larcerto.com.br
-cloud_vip: 192.168.1.250
+# Horizon (VIP do Kolla) - REQ12: cloud.larcerto.com.br; igual ao kolla_internal_vip_address do globals.yml
+cloud_vip: 10.99.0.250
 
 # IPs privados fixos (iguais aos de terraform/variables.tf)
 private_ips:

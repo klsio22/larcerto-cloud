@@ -15,7 +15,7 @@ flowchart LR
   net --> ca["ca .11<br/>easy-rsa"]
   net --> db["db .12<br/>MariaDB"]
   net --> web["web .13<br/>Apache + PHP"]
-  host -. "cloud.larcerto.com.br" .-> vip["Horizon 192.168.1.250"]
+  host -. "cloud.larcerto.com.br" .-> vip["Horizon 10.99.0.250 (dummy1)"]
 ```
 
 Cada VM tem um floating IP da `public` (pool `.100–.199`). O `db` só aceita a 3306 vindo da
@@ -99,7 +99,7 @@ Opcional (REQ12). A mesma CA LarCerto assina um certificado próprio do painel (
 `horizon`), emitido na VM `ca`; nada é pago e nada sai do lab. O Kolla não liga o TLS só do painel com
 um VIP único, então um frontend extra do HAProxy do Kolla
 ([`kolla-config/config/haproxy/services.d/horizon-https.cfg`](../kolla-config/config/haproxy/services.d/horizon-https.cfg))
-serve o Horizon em `192.168.1.250:443`. As APIs, os openrc e o Terraform continuam em HTTP.
+serve o Horizon em `10.99.0.250:443`. As APIs, os openrc e o Terraform continuam em HTTP.
 
 ```bash
 ./larcerto.sh cert cloud   # emite na VM ca e grava /etc/kolla/haproxy/haproxy.pem (root)
@@ -156,13 +156,13 @@ bash tests/cloud-checks.sh https_cloud   # opcional: Horizon por HTTPS (depois d
 ```
 
 Nomes da zona `larcerto.com.br` (VM `dns`): `larcerto.com.br`, `www` e `web` vão para a web, `dns` e
-`ca` para as VMs delas, `db` para o IP privado do banco e `cloud` para o Horizon (`192.168.1.250`).
+`ca` para as VMs delas, `db` para o IP privado do banco e `cloud` para o Horizon (`10.99.0.250`).
 `horizon.larcerto.com.br` é um apelido (`CNAME`) de `cloud`, e o registro coringa `*` manda qualquer
 outro nome (ex.: `qualquer.larcerto.com.br`) para a web, como o certificado wildcard `*.larcerto.com.br`.
 
 ```bash
 resolvectl query qualquer.larcerto.com.br   # floating IP da web (coringa)
-resolvectl query horizon.larcerto.com.br    # cloud.larcerto.com.br -> 192.168.1.250 (CNAME)
+resolvectl query horizon.larcerto.com.br    # cloud.larcerto.com.br -> 10.99.0.250 (CNAME)
 ```
 
 ## Recriar (demonstração / REQ25)
