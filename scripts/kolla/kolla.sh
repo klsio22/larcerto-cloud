@@ -1,4 +1,4 @@
-# Comandos Kolla (bootstrap, prechecks, deploy, post-deploy, stop-kolla) via kolla-ansible.
+# Comandos Kolla (venv, bootstrap, prechecks, deploy, post-deploy, stop-kolla) via kolla-ansible.
 # Carregado pelo larcerto.sh; so define funcoes e variaveis. Sem o antigo wrapper na raiz.
 # shellcheck shell=bash
 
@@ -24,7 +24,7 @@ kolla_cleanup() {
 kolla_check_prereqs() {
   if [[ ! -x "${KOLLA_BIN}" ]]; then
     echo "Erro: kolla-ansible nao encontrado em: ${KOLLA_BIN}" >&2
-    echo "Defina VENV_PATH ou KOLLA_BIN corretamente e tente novamente." >&2
+    echo "Crie o venv com ./larcerto.sh venv (ou defina VENV_PATH ou KOLLA_BIN)." >&2
     exit 1
   fi
   if [[ ! -f "${INVENTORY}" ]]; then
@@ -37,9 +37,93 @@ kolla_check_prereqs() {
   fi
   if [[ ! -f "${PASSWORDS_FILE}" ]]; then
     echo "Erro: arquivo de senhas nao encontrado em: ${PASSWORDS_FILE}" >&2
-    echo "Gere com: cp ${VENV_PATH}/share/kolla-ansible/etc_examples/kolla/passwords.yml ${PASSWORDS_FILE} && ${VENV_PATH}/bin/kolla-genpwd -p ${PASSWORDS_FILE}" >&2
+    echo "Gere com: ./larcerto.sh venv (ou: cp ${VENV_PATH}/share/kolla-ansible/etc_examples/kolla/passwords.yml ${PASSWORDS_FILE} && ${VENV_PATH}/bin/kolla-genpwd -p ${PASSWORDS_FILE})" >&2
     exit 1
   fi
+}
+
+# ---- venv: o passo "Install dependencies" do quickstart do Kolla, num comando.
+VENV_PYTHON="${VENV_PYTHON:-python3}"
+KOLLA_ANSIBLE_SRC="${KOLLA_ANSIBLE_SRC:-git+https://opendev.org/openstack/kolla-ansible@master}"
+OPENSTACK_CONSTRAINTS="${OPENSTACK_CONSTRAINTS:-https://releases.openstack.org/constraints/upper/master}"
+VENV_APT_PKGS="python3-venv python3-dev git gcc libffi-dev libssl-dev libdbus-glib-1-dev"
+
+# Pacotes do sistema que o venv precisa. So confere: o apt (sudo) fica com o aluno.
+venv_check_system() {
+  local -a falta=()
+  if ! command -v "${VENV_PYTHON}" >/dev/null 2>&1; then
+    falta+=("${VENV_PYTHON}")
+  else
+    "${VENV_PYTHON}" -c 'import ensurepip' >/dev/null 2>&1 || falta+=("python3-venv (sem ensurepip)")
+    "${VENV_PYTHON}" -c 'import os, sys, sysconfig; sys.exit(not os.path.exists(os.path.join(sysconfig.get_paths()["include"], "Python.h")))' \
+      >/dev/null 2>&1 || falta+=("python3-dev (sem Python.h)")
+  fi
+  command -v git >/dev/null 2>&1 || falta+=(git)
+  command -v gcc >/dev/null 2>&1 || falta+=(gcc)
+  [[ ${#falta[@]} -eq 0 ]] && return 0
+  echo "Falta no sistema: ${falta[*]}" >&2
+  echo "Instale (uma vez) e rode de novo: sudo apt install ${VENV_APT_PKGS}" >&2
+  return 1
+}
+
+# O Kolla suporta o Python padrao dos sistemas da support matrix (Ubuntu 24.04 e Rocky 10: 3.12; Debian 13: 3.13).
+venv_python_warning() {
+  local v
+  v="$("${VENV_PYTHON}" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+  case "${v}" in
+    3.12|3.13) ;;
+    *) echo "AVISO: Python ${v} fora da support matrix do Kolla (3.12/3.13); se a instalacao falhar, use VENV_PYTHON=python3.12" >&2 ;;
+  esac
+}
+
+# passwords.yml so quando falta: regenerar trocaria as senhas de um Kolla ja implantado.
+venv_passwords() {
+  [[ -f "${PASSWORDS_FILE}" ]] && return 0
+  local example="${VENV_PATH}/share/kolla-ansible/etc_examples/kolla/passwords.yml"
+  local tmp="${PASSWORDS_FILE}.tmp"
+  if [[ ! -f "${example}" ]]; then
+    echo "Erro: falta ${example} (kolla-ansible do venv incompleto: rm -rf ${VENV_PATH} e rode de novo)" >&2
+    return 1
+  fi
+  cp "${example}" "${tmp}"
+  chmod 600 "${tmp}"
+  "${VENV_PATH}/bin/kolla-genpwd" -p "${tmp}" >/dev/null
+  mv "${tmp}" "${PASSWORDS_FILE}"
+  echo "Gerado: ${PASSWORDS_FILE} (senhas do Kolla, fora do git)"
+}
+
+# ./larcerto.sh venv: cria o venv do Kolla; refaz so o que falta (a marca diz que terminou).
+cmd_venv() {
+  if [[ $# -gt 0 ]]; then
+    echo "Uso: ./larcerto.sh venv   (caminho: VENV_PATH=${VENV_PATH}; Python: VENV_PYTHON=${VENV_PYTHON})" >&2
+    exit 1
+  fi
+  local bin="${VENV_PATH}/bin"
+  local mark="${VENV_PATH}/.larcerto-venv"
+  if [[ -f "${mark}" && -x "${bin}/kolla-ansible" && -x "${bin}/openstack" ]]; then
+    venv_passwords
+    echo "venv OK: ${VENV_PATH} (ja estava)"
+    return 0
+  fi
+
+  venv_check_system || exit 1
+  # sem pip = criacao parou no meio: o venv do python3 completa a pasta existente
+  if [[ ! -x "${bin}/pip" ]]; then
+    venv_python_warning
+    step "Criando o venv em ${VENV_PATH}"
+    "${VENV_PYTHON}" -m venv "${VENV_PATH}"
+  fi
+  step "pip, kolla-ansible e cliente openstack"
+  "${bin}/pip" install -U pip
+  [[ -x "${bin}/kolla-ansible" ]] || "${bin}/pip" install "${KOLLA_ANSIBLE_SRC}"
+  [[ -x "${bin}/openstack" ]] || "${bin}/pip" install python-openstackclient -c "${OPENSTACK_CONSTRAINTS}"
+  kolla_ensure_py_module docker docker
+  kolla_ensure_py_module dbus dbus-python
+  step "Colecoes do Ansible (kolla-ansible install-deps)"
+  "${bin}/kolla-ansible" install-deps
+  : >"${mark}"
+  venv_passwords
+  echo "venv OK: ${VENV_PATH}"
 }
 
 # ensure_py_module <modulo> <pacote pip>: instala no venv se o import falhar.

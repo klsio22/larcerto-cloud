@@ -66,7 +66,7 @@ larcerto-cloud/
 |----------|----------------|
 | [`README.md`](README.md) | Guia do lab: como subir a nuvem, rede AIO, troubleshooting |
 | [`docs/`](docs/README.md) | Documentação dos scripts: funções de `larcerto.sh` e dos módulos de `scripts/`, openrc/`clouds.yaml` |
-| [`larcerto.sh`](larcerto.sh) | Entrypoint único (lista completa: `./larcerto.sh help`): `all`, `prep`, `bootstrap`/`prechecks`/`deploy`/`post-deploy`, `status`, `stop`, `start`, `ext-net`, `dns-host`, `install-app`, `start-app`, `recreate-app`, `clear-all`, `vms`, `cert`, `dummy0`, `fix-ovs`, `fix-wired`, `fix-horizon`, `test-ovs` |
+| [`larcerto.sh`](larcerto.sh) | Entrypoint único (lista completa: `./larcerto.sh help`): `venv`, `all`, `prep`, `bootstrap`/`prechecks`/`deploy`/`post-deploy`, `status`, `stop`, `start`, `ext-net`, `dns-host`, `install-app`, `start-app`, `recreate-app`, `clear-all`, `vms`, `cert`, `dummy0`, `fix-ovs`, `fix-wired`, `fix-horizon`, `test-ovs` |
 | [`scripts/`](scripts/) | Módulos do lab, carregados pelo `larcerto.sh`. Os comandos Kolla estão em `scripts/kolla/kolla.sh` (inventário + `kolla-config`); tenta root via Docker se não houver sudo NOPASSWD |
 | [`all-in-one`](all-in-one) | Inventário Ansible AIO: todos os papéis (control, network, compute…) em `localhost` |
 | [`docs/enunciado-trabalho-1.md`](docs/enunciado-trabalho-1.md) | Requisitos do Trabalho 1 (REQ01–REQ24 + substitutivo REQ25) |
@@ -83,7 +83,8 @@ larcerto-cloud/
 | `kolla-config/public-openrc-system.sh` | OpenRC público + system scope |
 
 `passwords.yml`, `*-openrc.sh` e `clouds.yaml` contêm **senhas** e ficam fora do git (`.gitignore`). Numa máquina nova, gere o
-`passwords.yml` antes do `bootstrap`; os openrc e o `clouds.yaml` saem do `./larcerto.sh post-deploy`:
+`passwords.yml` antes do `bootstrap` (o `./larcerto.sh venv` já gera se faltar); os openrc e o `clouds.yaml`
+saem do `./larcerto.sh post-deploy`. À mão:
 
 ```bash
 cp ~/venvs/kolla/share/kolla-ansible/etc_examples/kolla/passwords.yml kolla-config/
@@ -117,7 +118,7 @@ Para o `./larcerto.sh install-app` (ou o passo a passo de [`docs/nuvem-larcerto.
     python3 -m zipfile -e "terraform_${V}_linux_amd64.zip" . && \
     install -m 0755 terraform ~/.local/bin/terraform && ~/.local/bin/terraform version
   ```
-- **Cliente `openstack`** no venv: `~/venvs/kolla/bin/pip install python-openstackclient`.
+- **Cliente `openstack`** no venv: já vem do `./larcerto.sh venv` (à mão: `~/venvs/kolla/bin/pip install python-openstackclient`).
 - **Chave SSH**: `~/.ssh/id_ed25519.pub` (`ssh-keygen -t ed25519`, se não existir).
 - **Senha do banco**: `ansible/group_vars/all/secrets.yml`, copiado de `secrets.yml.example` com a
   senha trocada (fora do git). Se a app local já foi criada (`app/.env` com `DB_PASSWORD`), o
@@ -150,18 +151,32 @@ chmod +x larcerto.sh
 
 ### 1) Venv
 
+Uma vez por máquina: os pacotes do sistema (pedem `sudo`, por isso ficam com você) e o venv do Kolla.
+
 ```bash
-source ~/venvs/kolla/bin/activate
+sudo apt install python3-venv python3-dev git gcc libffi-dev libssl-dev libdbus-glib-1-dev
+./larcerto.sh venv
 ```
 
-Se ainda não existir:
+O `venv` faz o passo "Install dependencies" do
+[quickstart oficial](https://docs.openstack.org/kolla-ansible/latest/user/quickstart.html), com os mesmos
+comandos: `python3 -m venv ~/venvs/kolla`, `pip install -U pip`,
+`pip install git+https://opendev.org/openstack/kolla-ansible@master`, o cliente `openstack`
+(`python-openstackclient`, constraints `master`), os módulos `docker` e `dbus-python` e
+`kolla-ansible install-deps`. Se `kolla-config/passwords.yml` não existe, ele o gera com `kolla-genpwd`
+(um `passwords.yml` existente nunca é tocado). Rodar de novo não reinstala nada (`venv OK: ... (ja estava)`);
+se parou no meio, ele retoma do que falta. Faltando pacote do sistema, ele só mostra a linha do `apt` e sai.
+
+- Outro caminho: `VENV_PATH=/outro/venv ./larcerto.sh venv` (e o mesmo `VENV_PATH` nos outros comandos).
+- Outro Python: `VENV_PYTHON=python3.12 ./larcerto.sh venv`. O Kolla suporta o Python padrão dos sistemas
+  da [support matrix](https://docs.openstack.org/kolla-ansible/latest/user/support-matrix.html)
+  (3.12 e 3.13); com outra versão o `venv` avisa e segue.
+- Refazer do zero: `rm -rf ~/venvs/kolla && ./larcerto.sh venv`.
+
+O `larcerto.sh` não precisa do venv ativo. Para usar `openstack` ou `kolla-ansible` à mão no terminal:
 
 ```bash
-python3 -m venv ~/venvs/kolla
 source ~/venvs/kolla/bin/activate
-pip install -U pip
-pip install git+https://opendev.org/openstack/kolla-ansible@master
-kolla-ansible install-deps
 ```
 
 ### 2) Prep + deploy
@@ -181,7 +196,7 @@ Atalho para subir o projeto inteiro de uma vez (OpenStack, nuvem, app e HTTPS do
 ./larcerto.sh all
 ```
 
-Numa máquina nova, rode antes `./larcerto.sh bootstrap`. Repetir o `all` com a nuvem no ar corta a rede das VMs até o `deploy` recriar o OVS.
+Numa máquina nova, rode antes `./larcerto.sh venv` e `./larcerto.sh bootstrap`. Repetir o `all` com a nuvem no ar corta a rede das VMs até o `deploy` recriar o OVS.
 
 **Depois do `all`: confiar no certificado.** Para o HTTPS de `https://larcerto.com.br` e
 `https://cloud.larcerto.com.br` funcionar no navegador (cadeado, sem aviso), recomenda-se rodar:

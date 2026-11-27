@@ -91,6 +91,7 @@ Chama `kolla_run <ação>` de [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.
 
 | CLI | Função | O que faz |
 |-----|--------|-----------|
+| `venv` | `cmd_venv` (`scripts/kolla/kolla.sh`) | Cria o venv do Kolla em `VENV_PATH` com os comandos do quickstart (`python3 -m venv`, `pip install -U pip`, kolla-ansible `@master`, `python-openstackclient` com constraints `master`, `docker`, `dbus-python`, `kolla-ansible install-deps`) e gera `kolla-config/passwords.yml` com `kolla-genpwd` se faltar (modo `600`; existente não é tocado). Só refaz o que falta; a marca `${VENV_PATH}/.larcerto-venv` diz que terminou (`venv OK: ... (ja estava)`). Antes, confere `ensurepip` (`python3-venv`), `Python.h` (`python3-dev`), `git` e `gcc`: se falta, imprime `Falta no sistema:` e a linha do `sudo apt install` e sai 1, sem criar nada e sem rodar `sudo`. Python fora de 3.12/3.13: `AVISO:` e segue |
 | `prep` | `cmd_prep` | `dummy0` + `fix-ovs`; imprime próximo fluxo |
 | `dummy0` | `cmd_dummy0` | Cria/ativa a interface externa (`dummy0` ou valor de `globals.yml`) |
 | `fix-ovs` | `cmd_fix_ovs` | Para OVS do host, limpa `/run/openvswitch`, remove containers OVS Kolla |
@@ -111,7 +112,7 @@ Chama `kolla_run <ação>` de [`scripts/kolla/kolla.sh`](../scripts/kolla/kolla.
 | `prechecks` | `cmd_kolla` | → `kolla_run prechecks` |
 | `deploy` | `cmd_kolla` | → `kolla_run deploy` + `fix-wired` + `ext-net` |
 | `post-deploy` | `cmd_kolla` | → `kolla_run post-deploy` + `fix-wired` + `ext-net` |
-| `all` | `run_all` (`scripts/lab/install.sh`) | `./larcerto.sh all [--from <etapa>]`: sobe o projeto inteiro em 15 etapas, sem apagar nada: `prep` → `prechecks` → `deploy` → `post-deploy` → `prereqs` → `start` → `bootstrap` → `terraform` → `nuvem` → `app` → `dns-host` → `checks` → `cert-cloud` → `deploy-https` → `https-cloud`. Falhou: mostra a etapa e `all --from <etapa>`. Numa máquina nova, rode antes `./larcerto.sh bootstrap`. Repetir com a nuvem no ar corta a rede das VMs até o `deploy` recriar o OVS |
+| `all` | `run_all` (`scripts/lab/install.sh`) | `./larcerto.sh all [--from <etapa>]`: sobe o projeto inteiro em 15 etapas, sem apagar nada: `prep` → `prechecks` → `deploy` → `post-deploy` → `prereqs` → `start` → `bootstrap` → `terraform` → `nuvem` → `app` → `dns-host` → `checks` → `cert-cloud` → `deploy-https` → `https-cloud`. Falhou: mostra a etapa e `all --from <etapa>`. Numa máquina nova, rode antes `./larcerto.sh venv` e `./larcerto.sh bootstrap`. Repetir com a nuvem no ar corta a rede das VMs até o `deploy` recriar o OVS |
 | `clear-all` | `clear_all` (`scripts/lab/install.sh`) | `./larcerto.sh clear-all [--yes]`: **apaga** o projeto inteiro e não sobe nada de volta (não é um reinício; para subir de novo, `./larcerto.sh all`). Sem `--yes`, mostra o que sai e o que fica e pede para digitar yes (qualquer outra resposta cancela). 9 etapas: `start` (só com containers do Kolla e `terraform/terraform.tfstate`: a API precisa responder) → `destroy-app` (`terraform destroy -auto-approve` como `devops1`) → `dns-host` (`resolvectl revert br-ex`) → `ext-net` (`ext-net --down`, se a `br-ex` existe) → `kolla` (`kolla-ansible destroy --yes-i-really-really-mean-it`, sem `--include-images`: containers, volumes e `/etc/kolla/<serviço>`) → `app-local` (containers do projeto Compose `larcerto`, volumes `larcerto_db_data` e `larcerto_uploads`, imagens `larcerto-web` e `larcerto-tests`) → `files` (`terraform/terraform.tfstate` e `terraform/terraform.tfstate.backup`, `ansible/inventory/hosts.ini`, `cloud/secrets/clouds.yaml`, `cloud/secrets/devops1.password`, `kolla-config/clouds.yaml`, `kolla-config/*-openrc*.sh` e tudo em `ansible/files/pki/` menos o `.gitkeep`: a CA morre) → `trust` (`certutil -D` da `CA LarCerto` em cada banco NSS) → `cabo` (`fix-wired`). Ficam: `kolla-config/passwords.yml`, `kolla-config/globals.yml`, `app/.env`, `ansible/group_vars/all/secrets.yml`, a chave SSH, o venv, o Terraform e as imagens do Kolla. `start`, `destroy-app`, `dns-host`, `ext-net` e `trust` pulam (`pulado:`) o que já não existe, e as outras não falham quando o que apagam já sumiu; então, se uma etapa falhar, `./larcerto.sh clear-all --yes` continua. O `cleanup-host` do Kolla apaga **todos** os network namespaces e as interfaces `tap*`, `brq*` e `vxlan*` do host |
 | `stop-kolla` | `cmd_kolla` | → `kolla_run stop` |
 | `help` | `usage` | Ajuda |
@@ -224,7 +225,8 @@ Os comandos `bootstrap`, `prechecks`, `deploy`, `post-deploy` e `stop-kolla` rod
 
 | Variável | Padrão | Uso |
 |----------|--------|-----|
-| `VENV_PATH` | `$HOME/venvs/kolla` | Venv com `kolla-ansible`, `ansible` e os módulos `docker` e `dbus` |
+| `VENV_PATH` | `$HOME/venvs/kolla` | Venv com `kolla-ansible`, `ansible` e os módulos `docker` e `dbus` (criado por `venv`) |
+| `VENV_PYTHON` | `python3` | Python usado pelo `venv` para criar o venv (ex.: `python3.12`) |
 | `KOLLA_BIN` | `${VENV_PATH}/bin/kolla-ansible` | Executável do kolla-ansible |
 | `INVENTORY` | `all-in-one` | Inventário Ansible |
 | `CONFIG_DIR` | `kolla-config` | Pasta com `globals.yml` e demais configs |

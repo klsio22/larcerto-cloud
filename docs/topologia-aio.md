@@ -47,7 +47,7 @@ Colocar o cabo em `neutron_external_interface` (ou no `br-ex` do OVS) derruba a 
 
 ## Checklist pré-deploy (aluno)
 
-1. Venv Kolla ativo (`~/venvs/kolla`) e `kolla-ansible install-deps` já feito.
+1. Venv Kolla pronto (`./larcerto.sh venv`: cria `~/venvs/kolla` e roda `kolla-ansible install-deps`).
 2. Conferir VIP livre: `ping -c1 192.168.1.250` (não deve responder se estiver livre).
 3. Revisar [`../kolla-config/globals.yml`](../kolla-config/globals.yml): `enp9s0`, `dummy0`, VIP.
 4. Máquina nova: `./larcerto.sh bootstrap` (uma vez).

@@ -18,6 +18,11 @@ Para este projeto, isso ajuda a montar uma nuvem privada reproduzivel para os re
 - Acesso `sudo`
 - Virtualizacao habilitada (se for criar VMs no compute local)
 
+> Neste repo, o `./larcerto.sh venv` faz o venv do passo 4, o `pip install` do passo 5, o
+> `kolla-ansible install-deps`, o cliente `openstack` e o `passwords.yml`, com os mesmos comandos. O `apt` do
+> passo 3 continua com você, e o `/etc/kolla` e o inventário do passo 5 não são usados: o lab lê
+> `kolla-config/` e `all-in-one` da raiz do repo. Abaixo, os comandos originais, para referência.
+
 ## 3) Dependencias do sistema (Ubuntu/Debian)
 
 ```bash
@@ -104,7 +109,7 @@ Para usar exatamente essa estrutura:
 ./larcerto.sh all
 ```
 
-Esse comando sobe o projeto inteiro (OpenStack, nuvem, app e HTTPS do Horizon) e continua de uma etapa com `./larcerto.sh all --from <etapa>`. Numa máquina nova, rode antes `./larcerto.sh bootstrap`.
+Esse comando sobe o projeto inteiro (OpenStack, nuvem, app e HTTPS do Horizon) e continua de uma etapa com `./larcerto.sh all --from <etapa>`. Numa máquina nova, rode antes `./larcerto.sh venv` e `./larcerto.sh bootstrap`.
 
 Só o OpenStack, em etapas:
 

@@ -30,6 +30,9 @@ Uso: ./larcerto.sh <comando> [opções]
 
 Comandos:
   help           Mostra esta ajuda (-h, --help)
+  venv           Cria o venv do Kolla (~/venvs/kolla) e o kolla-config/passwords.yml, se faltarem
+                 (antes, uma vez: sudo apt install python3-venv python3-dev git gcc libffi-dev
+                  libssl-dev libdbus-glib-1-dev; o comando so mostra a linha, nao roda sudo)
   prep           dummy0 + desativa OVS do host (antes do 1º deploy / após conflito OVS)
   dummy0         Cria/ativa interface dummy0 (neutron_external_interface)
   fix-ovs        Para OVS do host, limpa /run/openvswitch, remove containers OVS Kolla
@@ -45,7 +48,7 @@ Comandos:
                  (etapas: prep prechecks deploy post-deploy prereqs start bootstrap terraform nuvem
                   app dns-host checks cert-cloud deploy-https https-cloud)
                  Continuar de uma etapa: ./larcerto.sh all --from <etapa>
-                 Maquina nova: rode antes ./larcerto.sh bootstrap
+                 Maquina nova: rode antes ./larcerto.sh venv e ./larcerto.sh bootstrap
   install-app    Confere pre-requisitos e sobe nuvem + app em sequencia [--from <etapa>]
                  (etapas: prereqs start bootstrap terraform nuvem app dns-host checks)
   start-app      Religa uma instalacao existente (VMs SHUTOFF, dns-host, checks)
@@ -71,6 +74,7 @@ Comandos:
 
 Exemplos:
   chmod +x larcerto.sh
+  ./larcerto.sh venv
   ./larcerto.sh prep
   ./larcerto.sh bootstrap && ./larcerto.sh prechecks && ./larcerto.sh deploy
   ./larcerto.sh post-deploy
@@ -87,6 +91,7 @@ shift || true
 
 case "${ACTION}" in
   help|-h|--help) usage ;;
+  venv) cmd_venv "$@" ;;
   prep) cmd_prep ;;
   dummy0) cmd_dummy0 ;;
   fix-ovs) cmd_fix_ovs ;;

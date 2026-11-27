@@ -36,7 +36,7 @@ Cada VM tem um floating IP da `public` (pool `.100–.199`). O `db` só aceita a
 
 | O quê | Comando | Observação |
 |-------|---------|------------|
-| Cliente OpenStack no venv | `~/venvs/kolla/bin/pip install python-openstackclient` | só o venv, não o sistema |
+| Cliente OpenStack no venv | `./larcerto.sh venv` (ou `~/venvs/kolla/bin/pip install python-openstackclient`) | só o venv, não o sistema |
 | Terraform | binário em `~/.local/bin/terraform` (releases.hashicorp.com) | sem apt |
 | Chave SSH | `ssh-keygen -t ed25519` (se não existir `~/.ssh/id_ed25519`) | |
 | Senha do banco | `cp ansible/group_vars/all/secrets.yml.example ansible/group_vars/all/secrets.yml` e editar | fora do git; com a app local criada (`app/.env`), o `install-app` copia o `DB_PASSWORD` |

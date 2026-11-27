@@ -319,6 +319,202 @@ test_missing_py_modules_installed() {
     || fail "pip install depois do kolla-ansible"
 }
 
+# ---- larcerto.sh venv: python3 do sistema falso (ensurepip, Python.h, versao, -m venv) e um
+# venv modelo em $T/venvtpl. O pip falso "instala" criando os binarios; FAKE_PIP_FAIL=<texto>
+# faz o primeiro pip com esse texto falhar.
+setup_venv_fakes() {
+  export VENV_PATH="${T}/newvenv" KOLLA_BIN="${T}/newvenv/bin/kolla-ansible"
+  rm -f "${T}/project/kolla-config/passwords.yml"
+  mkdir -p "${T}/venvtpl/bin"
+  fake git 'exit 0'
+  fake gcc 'exit 0'
+  fake apt 'echo "apt $*" >>"$FAKE_LOG"'
+  fake apt-get 'echo "apt-get $*" >>"$FAKE_LOG"'
+  fake python3 '
+case "$*" in
+  *ensurepip*) [[ "${FAKE_NO_ENSUREPIP:-0}" != 1 ]]; exit ;;
+  *Python.h*) [[ "${FAKE_NO_PYTHON_H:-0}" != 1 ]]; exit ;;
+  *version_info*) echo "${FAKE_PYVER:-3.12}"; exit 0 ;;
+  "-m venv "*)
+    echo "python3 $*" >>"$FAKE_LOG"
+    mkdir -p "$3"; cp -r "'"${T}"'/venvtpl/bin" "$3/"; exit 0 ;;
+esac
+exec "'"${REAL_PY}"'" "$@"'
+  cat >"${T}/venvtpl/bin/pip" <<EOF
+#!/usr/bin/env bash
+echo "pip \$*" >>"\$FAKE_LOG"
+d="\$(cd "\$(dirname "\$0")/.." && pwd)"
+if [[ -n "\${FAKE_PIP_FAIL:-}" && "\$*" == *"\${FAKE_PIP_FAIL}"* && ! -e "${T}/pip_failed" ]]; then
+  touch "${T}/pip_failed"; exit 1
+fi
+case "\$*" in
+  *kolla-ansible@master*)
+    cp "${T}/venvtpl/kolla-ansible" "${T}/venvtpl/kolla-genpwd" "\$d/bin/"
+    mkdir -p "\$d/share/kolla-ansible/etc_examples/kolla"
+    echo "keystone_admin_password:" >"\$d/share/kolla-ansible/etc_examples/kolla/passwords.yml" ;;
+  *python-openstackclient*) printf '#!/bin/sh\nexit 0\n' >"\$d/bin/openstack"; chmod +x "\$d/bin/openstack" ;;
+  "install docker") touch "\$d/installed_docker" ;;
+  "install dbus-python") touch "\$d/installed_dbus" ;;
+esac
+exit 0
+EOF
+  cat >"${T}/venvtpl/bin/python3" <<EOF
+#!/usr/bin/env bash
+d="\$(cd "\$(dirname "\$0")/.." && pwd)"
+case "\$2" in
+  *"import docker"*) [[ -e "\$d/installed_docker" ]]; exit ;;
+  *"import dbus"*) [[ -e "\$d/installed_dbus" ]]; exit ;;
+esac
+exec "${REAL_PY}" "\$@"
+EOF
+  cat >"${T}/venvtpl/kolla-ansible" <<'EOF'
+#!/usr/bin/env bash
+echo "kolla $*" >>"$FAKE_LOG"
+EOF
+  cat >"${T}/venvtpl/kolla-genpwd" <<'EOF'
+#!/usr/bin/env bash
+echo "kolla-genpwd $*" >>"$FAKE_LOG"
+echo "keystone_admin_password: gerada" >"$2"
+EOF
+  chmod +x "${T}/venvtpl/bin/"* "${T}/venvtpl/kolla-ansible" "${T}/venvtpl/kolla-genpwd"
+}
+
+# nenhum caminho do venv chama sudo ou apt
+expect_no_root() {
+  if grep -qE '^(sudo|apt|apt-get) ' "${T}/log"; then fail "venv chamou sudo/apt"; return 1; fi
+}
+
+# linha do log com o texto exato; imprime o numero (vazio se nao achou)
+log_line() { grep -nxF -- "$1" "${T}/log" | head -1 | cut -d: -f1; }
+
+test_venv_fresh() {
+  setup_venv_fakes
+  run_lab venv
+  expect_rc 0 || return 1
+  [[ "$(tail -1 "${T}/out")" == "venv OK: ${VENV_PATH}" ]] || fail "ultima linha nao e 'venv OK'" || return 1
+  local prev=0 n s
+  for s in "python3 -m venv ${VENV_PATH}" "pip install -U pip" \
+    "pip install git+https://opendev.org/openstack/kolla-ansible@master" \
+    "pip install python-openstackclient -c https://releases.openstack.org/constraints/upper/master" \
+    "pip install docker" "pip install dbus-python" "kolla install-deps"; do
+    n="$(log_line "${s}")"
+    [[ -n "${n}" && "${n}" -gt "${prev}" ]] || fail "fora de ordem ou ausente: ${s}" || return 1
+    prev="${n}"
+  done
+  [[ -f "${VENV_PATH}/.larcerto-venv" ]] || fail "sem a marca .larcerto-venv" || return 1
+  expect_no_root
+}
+
+test_venv_already_done() {
+  setup_venv_fakes
+  run_lab venv
+  expect_rc 0 || return 1
+  : >"${T}/log"
+  run_lab venv
+  expect_rc 0 || return 1
+  grep -qxF "venv OK: ${VENV_PATH} (ja estava)" "${T}/out" || fail "sem '(ja estava)'" || return 1
+  if grep -qE '^(pip |python3 -m venv|kolla install-deps)' "${T}/log"; then
+    fail "segunda rodada reinstalou"; return 1
+  fi
+  expect_no_root
+}
+
+test_venv_partial_failure() {
+  setup_venv_fakes
+  export FAKE_PIP_FAIL=python-openstackclient
+  run_lab venv
+  [[ "${RC}" -ne 0 ]] || fail "falha do pip nao parou o venv" || return 1
+  [[ ! -e "${VENV_PATH}/.larcerto-venv" ]] || fail "marca gravada apos falha" || return 1
+  expect_no_root || return 1
+  : >"${T}/log"
+  run_lab venv
+  expect_rc 0 || return 1
+  if grep -q '^python3 -m venv' "${T}/log"; then fail "recriou o venv na segunda rodada"; return 1; fi
+  if grep -q 'kolla-ansible@master' "${T}/log"; then fail "reinstalou o kolla-ansible"; return 1; fi
+  grep -q '^pip install python-openstackclient' "${T}/log" || fail "nao retomou o openstackclient" || return 1
+  [[ -f "${VENV_PATH}/.larcerto-venv" ]] || fail "sem a marca no fim" || return 1
+}
+
+test_venv_resume_without_pip() {
+  setup_venv_fakes
+  mkdir -p "${VENV_PATH}/bin"
+  cp "${T}/venvtpl/bin/python3" "${VENV_PATH}/bin/"
+  run_lab venv
+  expect_rc 0 || return 1
+  grep -qxF "python3 -m venv ${VENV_PATH}" "${T}/log" || fail "nao completou o venv sem pip" || return 1
+  [[ -f "${VENV_PATH}/.larcerto-venv" ]] || fail "sem a marca no fim" || return 1
+  expect_no_root
+}
+
+test_venv_missing_system_packages() {
+  setup_venv_fakes
+  local caso f
+  # PATH sem git/gcc: links para o resto de /usr/bin e /bin
+  mkdir -p "${T}/sysbin"
+  for f in /usr/bin/* /bin/*; do
+    case "${f##*/}" in git|gcc) ;; *) ln -sf "${f}" "${T}/sysbin/${f##*/}" 2>/dev/null ;; esac
+  done
+  for caso in ensurepip python_h git gcc; do
+    unset FAKE_NO_ENSUREPIP FAKE_NO_PYTHON_H
+    : >"${T}/log"
+    case "${caso}" in
+      ensurepip) export FAKE_NO_ENSUREPIP=1; run_lab venv ;;
+      python_h) export FAKE_NO_PYTHON_H=1; run_lab venv ;;
+      *) rm -f "${T}/bin/${caso}"
+         PATH="${T}/bin:${T}/sysbin" run_lab venv
+         fake "${caso}" 'exit 0' ;;
+    esac
+    expect_rc 1 || { fail "caso ${caso}"; return 1; }
+    grep -q '^Falta no sistema:' "${T}/err" || fail "${caso}: sem 'Falta no sistema:'" || return 1
+    grep -q 'sudo apt install python3-venv' "${T}/err" || fail "${caso}: sem a linha do apt" || return 1
+    [[ ! -e "${VENV_PATH}" ]] || fail "${caso}: criou ${VENV_PATH}" || return 1
+    expect_no_root || return 1
+  done
+}
+
+test_venv_python_warning() {
+  setup_venv_fakes
+  export FAKE_PYVER=3.14
+  run_lab venv
+  expect_rc 0 || return 1
+  grep -q '^AVISO: Python 3.14' "${T}/err" || fail "sem AVISO para 3.14" || return 1
+  rm -rf "${VENV_PATH}"
+  export FAKE_PYVER=3.12
+  run_lab venv
+  expect_rc 0 || return 1
+  if grep -q '^AVISO: Python' "${T}/err"; then fail "AVISO para 3.12"; return 1; fi
+  expect_no_root
+}
+
+test_venv_generates_passwords() {
+  setup_venv_fakes
+  run_lab venv
+  expect_rc 0 || return 1
+  local pw="${T}/project/kolla-config/passwords.yml"
+  rm -f "${pw}"
+  : >"${T}/log"
+  run_lab venv
+  expect_rc 0 || return 1
+  [[ -f "${pw}" ]] || fail "passwords.yml nao gerado" || return 1
+  [[ "$(stat -c %a "${pw}")" == 600 ]] || fail "passwords.yml sem modo 600" || return 1
+  grep -q "^kolla-genpwd -p ${pw}.tmp$" "${T}/log" || fail "kolla-genpwd nao chamado" || return 1
+  grep -q 'gerada' "${pw}" || fail "passwords.yml nao passou pelo kolla-genpwd" || return 1
+  [[ ! -e "${pw}.tmp" ]] || fail "sobrou o .tmp" || return 1
+  expect_no_root
+}
+
+test_venv_keeps_passwords() {
+  setup_venv_fakes
+  local pw="${T}/project/kolla-config/passwords.yml" before
+  echo "keystone_admin_password: do-aluno" >"${pw}"
+  before="$(sha256sum <"${pw}")"
+  run_lab venv
+  expect_rc 0 || return 1
+  [[ "$(sha256sum <"${pw}")" == "${before}" ]] || fail "passwords.yml alterado" || return 1
+  if grep -q '^kolla-genpwd' "${T}/log"; then fail "kolla-genpwd chamado com passwords.yml presente"; return 1; fi
+  expect_no_root
+}
+
 test_status_uses_vip_from_globals() {
   write_globals 'network_interface: "enp9s0"' 'neutron_external_interface: "dummy0"' \
     'kolla_internal_vip_address: "10.9.8.7"'
