@@ -240,27 +240,77 @@ step_vms() {
   return 1
 }
 
-# Dica por etapa, mostrada no bloco de falha.
+# Dica por etapa, mostrada no bloco de falha. Uma linha por item:
+#   D <texto>          o que houve (linha "Dica:")
+#   V <cmd>|<motivo>   para investigar (bloco "Para ver:")
+#   A <cmd>|<motivo>   rodar antes de continuar (bloco "Para continuar:", antes do comando de retomar)
 step_hint() {
   case "$1" in
-    prep) echo "veja o erro acima; ./larcerto.sh status mostra a dummy0 e o OVS" ;;
-    prechecks) echo "veja qual checagem do Kolla falhou acima; numa maquina nova, rode antes ./larcerto.sh bootstrap" ;;
-    deploy) echo "veja a tarefa do Kolla que falhou acima; ./larcerto.sh status mostra o estado dos containers" ;;
-    post-deploy) echo "veja o erro do kolla-ansible post-deploy acima; ele gera o clouds.yaml do admin" ;;
-    prereqs) echo "corrija o que esta nas linhas Falta acima" ;;
-    cert-cloud) echo "veja o erro do cert cloud acima; ./larcerto.sh cert mostra o estado dos certificados" ;;
-    deploy-https) echo "veja a tarefa do Kolla que falhou acima; ./larcerto.sh status mostra o estado do haproxy e do Horizon" ;;
-    https-cloud) echo "o Horizon nao respondeu em https://cloud.larcerto.com.br; ./larcerto.sh cert compara o certificado servido" ;;
-    start) echo "veja a saida do larcerto.sh start acima (se a API nao respondeu no VIP, espere uns segundos e continue); ./larcerto.sh status mostra o estado do Kolla" ;;
-    bootstrap) echo "veja o erro do bootstrap acima; ele pula o que ja existe, entao repetir e seguro (./larcerto.sh status mostra o Kolla)" ;;
-    destroy) echo "veja o erro do terraform destroy acima; repetir e seguro: ele so apaga o que ainda existe" ;;
-    terraform) echo "veja o erro do terraform acima; VM em ERROR: ./larcerto.sh vms mostra o status (depois de um reboot, ./larcerto.sh start para o libvirt do host, que faz as VMs nascerem em ERROR); repetir o apply e seguro: ele so cria o que falta" ;;
-    nuvem) echo "veja o erro do ansible acima para as VMs dns e ca; o playbook pode ser rodado de novo" ;;
-    app) echo "veja o erro do ansible acima para as VMs db e web; o playbook pode ser rodado de novo" ;;
-    dns-host) echo "./larcerto.sh dns-host precisa do ip da VM dns no inventario (ansible/inventory/hosts.ini)" ;;
-    checks) echo "uma checagem da nuvem falhou (a saida do cloud-checks.sh mostra qual); a nuvem subiu mas nao esta provada" ;;
-    vms) echo "uma VM falta ou nao ligou; ./larcerto.sh install-app --from terraform cria o que falta (o apply so cria o que nao existe)" ;;
+    prep) echo "D veja o erro acima"
+      echo "V ./larcerto.sh status|mostra a dummy0 e o OVS" ;;
+    prechecks) echo "D veja qual checagem do Kolla falhou acima"
+      echo "A ./larcerto.sh bootstrap|so numa maquina nova (prepara o host e o /etc/hosts)" ;;
+    deploy) echo "D veja a tarefa do Kolla que falhou acima"
+      echo "V ./larcerto.sh status|estado dos containers" ;;
+    post-deploy) echo "D veja o erro do kolla-ansible post-deploy acima; ele gera o clouds.yaml do admin" ;;
+    prereqs) echo "D corrija o que esta nas linhas Falta acima" ;;
+    cert-cloud) echo "D veja o erro do cert cloud acima"
+      echo "V ./larcerto.sh cert|estado dos certificados" ;;
+    deploy-https) echo "D veja a tarefa do Kolla que falhou acima"
+      echo "V ./larcerto.sh status|estado do haproxy e do Horizon" ;;
+    https-cloud) echo "D o Horizon nao respondeu em https://cloud.larcerto.com.br"
+      echo "V ./larcerto.sh cert|compara o certificado servido" ;;
+    start) echo "D veja a saida do start acima; se a API nao respondeu no VIP, espere uns segundos e continue"
+      echo "V ./larcerto.sh status|estado do Kolla" ;;
+    bootstrap) echo "D veja o erro do bootstrap acima; ele pula o que ja existe, entao repetir e seguro"
+      echo "V ./larcerto.sh status|estado do Kolla" ;;
+    destroy) echo "D veja o erro do terraform destroy acima; repetir e seguro: ele so apaga o que ainda existe" ;;
+    terraform) echo "D veja o erro do terraform acima; repetir o apply e seguro: ele so cria o que falta"
+      echo "V ./larcerto.sh vms|VM em ERROR? mostra o status de cada uma"
+      echo "A ./larcerto.sh start|so depois de um reboot (o libvirt do host faz as VMs nascerem em ERROR)" ;;
+    nuvem) echo "D veja o erro do ansible acima para as VMs dns e ca; o playbook pode ser rodado de novo" ;;
+    app) echo "D veja o erro do ansible acima para as VMs db e web; o playbook pode ser rodado de novo" ;;
+    dns-host) echo "D o dns-host precisa do ip da VM dns no inventario (ansible/inventory/hosts.ini)" ;;
+    checks) echo "D uma checagem da nuvem falhou (a saida do cloud-checks.sh mostra qual); a nuvem subiu mas nao esta provada" ;;
+    vms) echo "D uma VM falta ou nao ligou"
+      echo "A ./larcerto.sh install-app --from terraform|cria o que falta (o apply so cria o que nao existe)" ;;
   esac
+}
+
+# fail_cmd <cmd>|<motivo>: uma linha de comando do bloco de falha, com o motivo alinhado.
+fail_cmd() {
+  local cmd="${1%%|*}" why=""
+  [[ "$1" == *"|"* ]] && why="${1#*|}"
+  if [[ -n "${why}" ]]; then
+    printf '  %-38s # %s\n' "${cmd}" "${why}"
+  else
+    printf '  %s\n' "${cmd}"
+  fi
+}
+
+# fail_block <n> <total> <etapa> <codigo> <funcao de dica> <comando de retomar>
+fail_block() {
+  local n="$1" total="$2" step="$3" rc="$4" hint="$5" cont="$6" line dica="" e
+  local -a ver=() antes=()
+  while IFS= read -r line; do
+    case "${line}" in
+      "D "*) dica="${line#D }" ;;
+      "V "*) ver+=("${line#V }") ;;
+      "A "*) antes+=("${line#A }") ;;
+    esac
+  done < <("${hint}" "${step}")
+  {
+    echo
+    echo "FALHOU na etapa ${n}/${total} (${step}), codigo ${rc}"
+    echo "Dica: ${dica:-veja o erro acima}"
+    if [[ "${#ver[@]}" -gt 0 ]]; then
+      echo "Para ver:"
+      for e in "${ver[@]}"; do fail_cmd "${e}"; done
+    fi
+    echo "Para continuar:"
+    for e in "${antes[@]}"; do fail_cmd "${e}"; done
+    fail_cmd "${cont}"
+  } >&2
 }
 
 # Roda a lista de etapas. Argumentos: modo (install|start), etapa inicial (--from), etapas...
@@ -304,9 +354,7 @@ run_steps() {
     else
       cont="./larcerto.sh start-app"
     fi
-    echo "FALHOU na etapa ${n}/${total} (${step}), codigo ${rc}" >&2
-    echo "Dica: $("${hint}" "${step}")" >&2
-    echo "Para continuar: ${cont}" >&2
+    fail_block "${n}" "${total}" "${step}" "${rc}" "${hint}" "${cont}"
     return "${rc}"
   done
   return 0
@@ -494,12 +542,15 @@ clear_cabo() {
 
 clear_hint() {
   case "$1" in
-    start) echo "a API da nuvem nao respondeu, e o destroy-app precisa dela; ./larcerto.sh status mostra o Kolla" ;;
-    destroy-app) echo "veja o erro do terraform destroy acima; repetir e seguro: ele so apaga o que ainda existe" ;;
-    ext-net) echo "veja o erro do iptables acima; ./larcerto.sh ext-net --down pode ser repetido" ;;
-    kolla) echo "veja o erro do kolla-ansible destroy acima; se ele reclamou de processos qemu, sobrou VM fora do Terraform: openstack server list --all-projects (com o kolla-config/clouds.yaml do admin) e apague-as" ;;
-    cabo) echo "o cabo ficou sem IPv4: confira o cabo e o DHCP e rode ./larcerto.sh fix-wired" ;;
-    *) echo "veja o erro acima; repetir o clear-all e seguro" ;;
+    start) echo "D a API da nuvem nao respondeu, e o destroy-app precisa dela"
+      echo "V ./larcerto.sh status|estado do Kolla" ;;
+    destroy-app) echo "D veja o erro do terraform destroy acima; repetir e seguro: ele so apaga o que ainda existe" ;;
+    ext-net) echo "D veja o erro do iptables acima; o ext-net --down pode ser repetido" ;;
+    kolla) echo "D veja o erro do kolla-ansible destroy acima; se ele reclamou de processos qemu, sobrou VM fora do Terraform: apague-as"
+      echo "V openstack server list --all-projects|com o kolla-config/clouds.yaml do admin" ;;
+    cabo) echo "D o cabo ficou sem IPv4: confira o cabo e o DHCP"
+      echo "A ./larcerto.sh fix-wired|pede o IP do cabo de novo" ;;
+    *) echo "D veja o erro acima; repetir o clear-all e seguro" ;;
   esac
 }
 

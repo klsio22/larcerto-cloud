@@ -26,6 +26,12 @@ fi
 
 # ---------------------------------------------------------------- sandbox
 
+# expect_cont <cmd>: o bloco de falha tem "Para continuar:" e termina com o comando de retomar
+expect_cont() {
+  grep -qx 'Para continuar:' "${T}/err" && [[ "$(tail -1 "${T}/err" | sed 's/^  //; s/ *#.*$//')" == "$1" ]]
+}
+
+
 fake() {
   # fake <nome> <corpo>
   printf '#!/usr/bin/env bash\n%s\n' "$2" >"${T}/bin/$1"
@@ -3064,7 +3070,7 @@ test_install_step_failure_stops() {
     [[ -n "${code}" && "${RC}" -eq "${code}" && "${RC}" -ne 0 ]] \
       || fail "${step}: codigo no bloco (${code}) diferente do exit (${RC})" || return 1
     grep -q "^FALHOU na etapa ${idx}/8 (${step}), codigo" "${T}/err" || fail "${step}: bloco de falha ausente" || return 1
-    grep -q "^Para continuar: ./larcerto.sh install-app --from ${step}$" "${T}/err" || fail "${step}: linha de continuacao" || return 1
+    expect_cont "./larcerto.sh install-app --from ${step}" || fail "${step}: linha de continuacao" || return 1
     grep -q '^Dica: ' "${T}/err" || fail "${step}: sem dica" || return 1
     [[ "$(grep -c '^==> \[' "${T}/out")" -eq "${idx}" ]] || fail "${step}: etapa depois da falha rodou" || return 1
   done
@@ -3181,7 +3187,7 @@ test_start_app_failure_continuation() {
   run_lab start-app
   expect_rc 7 || return 1
   grep -q '^FALHOU na etapa 5/5 (checks), codigo 7$' "${T}/err" || fail "bloco de falha do start-app" || return 1
-  grep -q '^Para continuar: ./larcerto.sh start-app$' "${T}/err" || fail "linha de continuacao do start-app" || return 1
+  expect_cont "./larcerto.sh start-app" || fail "linha de continuacao do start-app" || return 1
 }
 
 test_docs_install_app() {
@@ -3899,11 +3905,11 @@ test_recreate_failure_stops() {
     grep -q "^FALHOU na etapa ${idx}/8 (${step}), codigo" "${T}/err" || fail "${step}: bloco de falha ausente" || return 1
     cont="./larcerto.sh install-app --from ${step}"
     [[ "${step}" == destroy ]] && cont="./larcerto.sh recreate-app"
-    grep -qxF "Para continuar: ${cont}" "${T}/err" || fail "${step}: continuacao errada: $(grep 'Para continuar' "${T}/err")" || return 1
+    expect_cont "${cont}" || fail "${step}: continuacao errada: $(tail -1 "${T}/err")" || return 1
     [[ "$(grep -c '^==> \[' "${T}/out")" -eq "${idx}" ]] || fail "${step}: etapa depois da falha rodou" || return 1
     ! grep -q '^Recriado em' "${T}/out" || fail "${step}: mostrou o tempo depois de falhar" || return 1
     if [[ "${step}" == terraform ]]; then
-      grep -q '^Dica: .*VM em ERROR.*\./larcerto\.sh vms' "${T}/err" || fail "dica do terraform sem VM em ERROR e larcerto.sh vms" || return 1
+      grep -qE '^  \./larcerto\.sh vms +# VM em ERROR' "${T}/err" || fail "bloco do terraform sem larcerto.sh vms / VM em ERROR" || return 1
     fi
   done
 }
@@ -3942,7 +3948,7 @@ test_recreate_waits_api_before_destroy() {
   run_lab recreate-app --yes
   [[ "${RC}" -ne 0 ]] || fail "seguiu sem a API" || return 1
   grep -q '^FALHOU na etapa 2/8 (start)' "${T}/err" || fail "nao parou no start" || return 1
-  grep -qxF 'Para continuar: ./larcerto.sh install-app --from start' "${T}/err" || fail "continuacao errada" || return 1
+  expect_cont "./larcerto.sh install-app --from start" || fail "continuacao errada" || return 1
   ! grep -q '^terraform' "${T}/log" || fail "rodou terraform sem a API" || return 1
   install_sandbox
   run_lab recreate-app --yes
@@ -4473,7 +4479,7 @@ test_all_step_failure_stops() {
     [[ "${RC}" -eq "${want}" ]] || fail "${name}: exit ${RC}, esperado ${want}" || return 1
     grep -qx "FALHOU na etapa ${i}/15 (${name}), codigo ${want}" "${T}/err" || fail "${name}: bloco de falha" || return 1
     grep -qE '^Dica: .+' "${T}/err" || fail "${name}: sem dica" || return 1
-    grep -qx "Para continuar: ./larcerto.sh all --from ${name}" "${T}/err" || fail "${name}: linha de continuacao" || return 1
+    expect_cont "./larcerto.sh all --from ${name}" || fail "${name}: linha de continuacao" || return 1
     [[ "$(grep -cE '^==> \[[0-9]+/15\] ' "${T}/out")" -eq "${i}" ]] || fail "${name}: etapa depois da falha rodou" || return 1
   done
 }
@@ -4851,7 +4857,7 @@ test_clear_all_step_failure_stops() {
     expect_rc "${rc}" || return 1
     grep -qxF "FALHOU na etapa ${n}/9 (${step}), codigo ${rc}" "${T}/err" || fail "${step}: sem FALHOU" || return 1
     grep -qE '^Dica: .+' "${T}/err" || fail "${step}: sem Dica" || return 1
-    grep -qxF 'Para continuar: ./larcerto.sh clear-all --yes' "${T}/err" || fail "${step}: sem Para continuar" || return 1
+    expect_cont "./larcerto.sh clear-all --yes" || fail "${step}: sem Para continuar" || return 1
     for ((k = n + 1; k <= 9; k++)); do
       if grep -q "^==> \[${k}/9\]" "${T}/out"; then fail "${step}: rodou a etapa ${k} depois da falha" || return 1; fi
     done
@@ -4864,7 +4870,7 @@ test_clear_all_kolla_hint() {
   export FAKE_KOLLA_RC=5
   run_lab clear-all --yes
   expect_rc 5 || return 1
-  grep '^Dica: ' "${T}/err" | grep -qF 'openstack server list --all-projects' || fail "Dica do kolla sem openstack server list"
+  grep -qE '^  openstack server list --all-projects +#' "${T}/err" || fail "bloco do kolla sem openstack server list"
 }
 
 test_clear_all_repeat_after_clear() {
