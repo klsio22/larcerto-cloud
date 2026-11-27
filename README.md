@@ -103,6 +103,33 @@ Detalhes: [`docs/topologia-aio.md`](docs/topologia-aio.md).
 
 ## Requisitos
 
+### Máquina
+
+O lab roda tudo num computador só (Kolla-Ansible *all-in-one*): o OpenStack em containers e, em cima dele,
+as 4 VMs da app (`dns`, `ca`, `web`, `db`, flavor `ds1G`: 1 vCPU, 1 GB de RAM e 10 GB de disco cada).
+
+| Item | Mínimo | Recomendado | Por quê |
+|------|--------|-------------|---------|
+| Sistema | Linux da [support matrix](https://docs.openstack.org/kolla-ansible/latest/user/support-matrix.html) do Kolla: Ubuntu 24.04, Debian 13 ou Rocky 10 | Ubuntu 24.04 LTS | o Kolla só testa nesses; o lab também já rodou no Zorin OS (base Ubuntu). Outra versão pode funcionar, mas sem garantia |
+| Python | 3.12 ou 3.13 (o padrão desses sistemas) | 3.12 | o `./larcerto.sh venv` avisa se for outro; `VENV_PYTHON=python3.12` escolhe outro Python |
+| RAM | 12 GB | 16 GB ou mais | ~8 GB para o OpenStack (quickstart do Kolla) + 4 GB das 4 VMs |
+| CPU | 4 núcleos, com virtualização (VT-x/AMD-V) ligada na BIOS | 8 núcleos ou mais | 4 VMs de 1 vCPU mais os containers do Kolla; sem virtualização, as VMs não sobem em velocidade usável |
+| Disco livre | 60 GB | 80 GB ou mais (SSD) | imagens do Kolla (~11 GB), 4 discos de 10 GB, imagem do Ubuntu, venv e Docker |
+| Rede | 1 placa com cabo, com internet | a mesma | a interface externa do Neutron é a `dummy0`, criada pelo `./larcerto.sh prep`; não precisa de segunda placa |
+| LAN | um IP livre na rede do cabo, para o VIP do OpenStack | — | `ping -c1 192.168.1.250` sem resposta = livre |
+| Acesso | `sudo` e Docker | usuário no grupo `docker` | com o grupo `docker`, `bootstrap`/`deploy` não pedem senha |
+
+RAM, CPU e disco são estimativas a partir do que o lab cria (quickstart do Kolla + flavor das VMs), não
+medições. Para conferir na sua máquina com tudo no ar (depois do `./larcerto.sh all`): `free -h` e `df -h /`.
+
+**Em outra máquina, ajuste antes do primeiro `deploy`** o [`kolla-config/globals.yml`](kolla-config/globals.yml),
+que está com os valores deste host:
+
+- `network_interface: "enp9s0"`: troque pelo nome da sua placa com cabo (`ip -br link`).
+- `kolla_internal_vip_address: "192.168.1.250"`: troque por um IP livre da sua rede, fora do DHCP do roteador.
+
+### Software
+
 Para o `./larcerto.sh install-app` (ou o passo a passo de [`docs/nuvem-larcerto.md`](docs/nuvem-larcerto.md)):
 
 - **Terraform `>= 1.5`**: binário em `~/.local/bin/terraform`. Se faltar, o `install-app` instala a versão

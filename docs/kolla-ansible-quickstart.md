@@ -11,6 +11,9 @@ Para este projeto, isso ajuda a montar uma nuvem privada reproduzivel para os re
 
 ## 2) Requisitos minimos
 
+Requisitos do Kolla puro, segundo o quickstart oficial. Para este projeto (OpenStack + as 4 VMs da app),
+veja a tabela mínimo × recomendado em [`README.md`](../README.md#máquina).
+
 - Host Linux suportado (Ubuntu recomendado para estudo)
 - 8 GB RAM (recomendado 12+ GB para folga)
 - 40 GB disco (recomendado 80+ GB)
